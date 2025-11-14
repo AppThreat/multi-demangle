@@ -1,6 +1,6 @@
 # multi-demangle
 
-Demangling support for various languages and compilers. Fork of symbolic-demangle.
+Demangling support for various languages and compilers. Fork of [symbolic-demangle](https://github.com/getsentry/symbolic/tree/10.2.1/symbolic-demangle).
 
 Currently supported languages are:
 
@@ -20,6 +20,14 @@ Use `uv` package manager.
 ```
 uv tool install maturin
 maturin develop --all-features
+```
+
+## Python usage
+
+Install the pypi package `multi-demangle`
+
+```
+pip install multi-demangle
 ```
 
 ```

@@ -155,7 +155,7 @@ dependencies = [
 
 [[package]]
 name = "multi-demangle"
-version = "0.0.1"
+version = "1.0.0"
 dependencies = [
  "cc",
  "cpp_demangle",
