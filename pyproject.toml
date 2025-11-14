@@ -4,7 +4,7 @@ build-backend = "maturin"
 
 [project]
 name = "multi-demangle"
-version = "0.0.1"
+version = "1.0.0"
 description = "A library to demangle symbols from various languages and compilers."
 readme = "README.md"
 license = { text = "MIT" }
