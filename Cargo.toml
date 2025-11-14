@@ -23,7 +23,7 @@ all-features = true
 
 [lib]
 name = "multi_demangle"
-crate-type = ["cdylib"]
+crate-type = ["cdylib", "rlib"]
 
 [features]
 extension-module = ["pyo3/extension-module"]

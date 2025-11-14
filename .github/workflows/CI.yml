@@ -18,6 +18,19 @@ on:
 permissions:
   contents: read
 jobs:
+  test:
+      name: Test
+      runs-on: ${{ matrix.os }}
+      strategy:
+        matrix:
+          os: [ubuntu-latest, windows-latest, macos-latest]
+      steps:
+        - uses: actions/checkout@v4
+        - name: Setup MSVC for Windows
+          if: runner.os == 'Windows'
+          uses: microsoft/setup-msvc@v1.1
+        - name: Run cargo test
+          run: cargo test --all-features
   linux:
     runs-on: ${{ matrix.platform.runner }}
     strategy:
