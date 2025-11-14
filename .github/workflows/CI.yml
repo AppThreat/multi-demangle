@@ -40,6 +40,11 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: 3.x
+      - name: Install modern C++ cross-compiler for ARM
+        if: contains(matrix.platform.target, 'arm') || contains(matrix.platform.target, 'aarch64')
+        run: |
+          sudo apt-get update -y
+          sudo apt-get install -y g++-arm-linux-gnueabihf g++-aarch64-linux-gnu
       - name: Build wheels
         uses: PyO3/maturin-action@v1
         with:
