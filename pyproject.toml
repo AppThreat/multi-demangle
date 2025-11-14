@@ -1,0 +1,19 @@
+[build-system]
+requires = ["maturin>=1.10,<2.0"]
+build-backend = "maturin"
+
+[project]
+name = "multi-demangle"
+version = "0.0.1"
+description = "A library to demangle symbols from various languages and compilers."
+readme = "README.md"
+license = { text = "MIT" }
+authors = [
+    { name = "Team AppThreat", email = "cloud@appthreat.com" }
+]
+requires-python = ">=3.8"
+classifiers = [
+    "Programming Language :: Rust",
+    "Programming Language :: Python :: Implementation :: CPython",
+    "Programming Language :: Python :: Implementation :: PyPy",
+]
