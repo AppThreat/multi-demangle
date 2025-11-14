@@ -527,9 +527,12 @@ mod test {
         );
     }
 }
+
+#[cfg(feature = "extension-module")]
 use pyo3::prelude::*;
 
 /// A Python module for demangling symbols, implemented in Rust.
+#[cfg(feature = "extension-module")]
 #[pymodule]
 mod multi_demangle {
     // Import necessary types from the parent `lib.rs` module

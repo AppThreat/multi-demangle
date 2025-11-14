@@ -19,7 +19,7 @@ Use `uv` package manager.
 
 ```
 uv tool install maturin
-maturin develop
+maturin develop --all-features
 ```
 
 ```
