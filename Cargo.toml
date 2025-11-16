@@ -6,8 +6,8 @@ authors = [
     "Team AppThreat <cloud@appthreat.com>"
 ]
 documentation = ""
-homepage = ""
-repository = ""
+homepage = "https://github.com/AppThreat/multi-demangle"
+repository = "https://github.com/AppThreat/multi-demangle"
 readme = "README.md"
 description = """
 A library to demangle symbols from various languages and compilers. Fork of symbolic-demangle.
