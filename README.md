@@ -6,7 +6,7 @@ Currently supported languages are:
 
 - C++ (GCC-style compilers and MSVC)
 - Rust (both `legacy` and `v0`)
-- Swift (up to Swift 6.2.1)
+- Swift (up to Swift 6.3)
 - ObjC (only symbol detection)
 
 As the demangling schemes for the languages are different, the supported demangling features are

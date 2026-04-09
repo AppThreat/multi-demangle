@@ -330,3 +330,61 @@ fn test_demangle_swift_no_args() {
         "$s3tmp1hyyySbXzB24_ZTSU13block_pointerFvaEF" => "h",
     });
 }
+
+#[test]
+fn test_demangle_swift_6_complete() {
+    assert_demangle!(Language::Swift, DemangleOptions::complete(), {
+        // --- Swift Concurrency & Actors ---
+        "$s7example1fyyYaF" => "example.f() async -> ()",
+        "$s7example1fyyYaKF" => "example.f() async throws -> ()",
+        "$s5Actor02MyA0C17testAsyncFunctionyyYaKFTY0_" => "(1) suspend resume partial function for Actor.MyActor.testAsyncFunction() async throws -> ()",
+        "$sScGySiG" => "Swift.TaskGroup<Swift.Int>",
+        "$s1t10globalFuncyyAA7MyActorCYiF" => "t.globalFunc(isolated t.MyActor) -> ()",
+        "$sBAIgHgIL_BAIegHgIL_TR" => "reabstraction thunk helper from @callee_guaranteed @async (@guaranteed Builtin.ImplicitActor) -> () to @escaping @callee_guaranteed @async (@guaranteed Builtin.ImplicitActor) -> ()",
+        "$s4null19transferAsyncResultAA16NonSendableKlassCyYaYTF" => "null.transferAsyncResult() async -> sending null.NonSendableKlass",
+
+        // --- Swift Strict Concurrency Boundaries (Sending / NonSendable) ---
+        "$s4testAAyAA5KlassC_ACtACnYTF" => "test.test(__owned test.Klass) -> sending (test.Klass, test.Klass)",
+        "$s5test24testyyAA5KlassCnYuF" => "test2.test(sending __owned test2.Klass) -> ()",
+        "$s3red7MyActorC3runyxxyYaKACYcYTXEYaKlFZ" => "static red.MyActor.run<A>(@red.MyActor () async throws -> sending A) async throws -> A",
+        "$s3red7MyActorC3runyxxyYaKYCXEYaKlFZ" => "static red.MyActor.run<A>(nonisolated(nonsending) () async throws -> A) async throws -> A",
+
+        // --- Distributed Actors ---
+        "$s17distributed_thunk2DAC1fyyFTE" => "distributed thunk distributed_thunk.DA.f() -> ()",
+        "$s16distributed_test1XC7computeyS2iFTF" => "distributed accessor for distributed_test.X.compute(Swift.Int) -> Swift.Int",
+
+        // --- Macros (Freestanding & Peer) ---
+        "$s9MacroUser13testStringify1a1bySi_SitF9stringifyfMf1_" => "freestanding macro expansion #3 of stringify in MacroUser.testStringify(a: Swift.Int, b: Swift.Int) -> ()",
+        "@__swiftmacro_1a13testStringifyAA1bySi_SitF9stringifyfMf_" => "freestanding macro expansion #1 of stringify in a.testStringify(a: Swift.Int, b: Swift.Int) -> ()",
+        "@__swiftmacro_18macro_expand_peers1SV1f20addCompletionHandlerfMp_" => "peer macro @addCompletionHandler expansion #1 of f in macro_expand_peers.S",
+
+        // --- Noncopyable (~Copyable) & Nonescapable (~Escapable) Conformance ---
+        "$sSRyxG15Synchronization19AtomicRepresentableABRi_zrlMc" => "protocol conformance descriptor for < where A: ~Swift.Copyable> Swift.UnsafeBufferPointer<A> : Synchronization.AtomicRepresentable in Synchronization",
+        "$sSRyxG15Synchronization19AtomicRepresentableABRi0_zrlMc" => "protocol conformance descriptor for < where A: ~Swift.Escapable> Swift.UnsafeBufferPointer<A> : Synchronization.AtomicRepresentable in Synchronization",
+
+        // --- C++ Interop ---
+        "$s4main20receiveInstantiationyySo34__CxxTemplateInst12MagicWrapperIiEVzF" => "main.receiveInstantiation(inout __C.__CxxTemplateInst12MagicWrapperIiE) -> ()",
+        "$s4main19returnInstantiationSo34__CxxTemplateInst12MagicWrapperIiEVyF" => "main.returnInstantiation() -> __C.__CxxTemplateInst12MagicWrapperIiE",
+        "$s3tmp1hyyySbXzB24_ZTSU13block_pointerFvaEF" => "tmp.h(@convention(block, mangledCType: \"_ZTSU13block_pointerFvaE\") (Swift.Bool) -> ()) -> ()",
+
+        // --- Differentiable Programming ---
+        "$s13test_mangling3fooyS2f_S2ftFTJfUSSpSr" => "forward-mode derivative of test_mangling.foo(Swift.Float, Swift.Float, Swift.Float) -> Swift.Float with respect to parameters {1, 2} and results {0}",
+        "$s4diff1hyyS2iYjfXEF" => "diff.h(@differentiable(_forward) (Swift.Int) -> Swift.Int) -> ()",
+        "$s4diff1hyyS2iYjrXEF" => "diff.h(@differentiable(reverse) (Swift.Int) -> Swift.Int) -> ()",
+        "$s4diff1hyyS2iYjdXEF" => "diff.h(@differentiable (Swift.Int) -> Swift.Int) -> ()",
+        "$s4diff1hyyS2iYjlXEF" => "diff.h(@differentiable(_linear) (Swift.Int) -> Swift.Int) -> ()",
+    });
+}
+
+#[test]
+fn test_swift_abnormal_manglings() {
+    assert_demangle!(Language::Swift, DemangleOptions::complete(), {
+        // Causes an abort with the Swift 6.0.3 demangler, expected to pass untouched or handled safely
+        "$sTB" => "$sTB",
+        "_SocketJoinOrLeaveMulticast" => "_SocketJoinOrLeaveMulticast",
+
+        // Huge complexity limit fallback
+        "type metadata for ((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((<<too complex>>))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))" => "type metadata for ((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((<<too complex>>))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))",
+    });
+}
+

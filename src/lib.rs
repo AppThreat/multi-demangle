@@ -4,7 +4,7 @@
 //!
 //! - C++ (GCC-style compilers and MSVC) (`features = ["cpp", "msvc"]`)
 //! - Rust (both `legacy` and `v0`) (`features = ["rust"]`)
-//! - Swift (up to Swift 5.3) (`features = ["swift"]`)
+//! - Swift (up to Swift 6.3) (`features = ["swift"]`)
 //! - ObjC (only symbol detection)
 //!
 //! As the demangling schemes for the languages are different, the supported demangling features are
