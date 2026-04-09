@@ -33,11 +33,7 @@ jobs:
           if [ "${{ runner.os }}" = "macOS" ]; then
             export RUSTFLAGS="-C link-arg=-undefined -C link-arg=dynamic_lookup"
           fi
-          if [ "${{ runner.os }}" = "Windows" ]; then
-            cargo test --no-default-features --features cpp,msvc,rust
-          else
-            cargo test --all-features
-          fi
+          cargo test --all-features
         shell: bash
           
   python-tests:
