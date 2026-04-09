@@ -27,6 +27,26 @@ swift_test_cases = [
         "mangling.varargsVsArray(arr: Swift.Int..., n: Swift.String) -> ()",
         "varargsVsArray",
     ),
+    (
+        "$s7example1fyyYaF",
+        "example.f() async -> ()",
+        "f"
+    ),
+    (
+        "$s17distributed_thunk2DAC1fyyFTE",
+        "distributed thunk distributed_thunk.DA.f() -> ()",
+        "DA.f"
+    ),
+    (
+        "$s4main20receiveInstantiationyySo34__CxxTemplateInst12MagicWrapperIiEVzF",
+        "main.receiveInstantiation(inout __C.__CxxTemplateInst12MagicWrapperIiE) -> ()",
+        "receiveInstantiation"
+    ),
+    (
+        "$s4diff1hyyS2iYjlXEF",
+        "diff.h(@differentiable(_linear) (Swift.Int) -> Swift.Int) -> ()",
+        "h"
+    )
 ]
 
 rust_test_cases = [

@@ -5,51 +5,43 @@
 // SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
-///
-/// \file
-/// This file defines DenseMapInfo traits for DenseMap.
-///
+//
+// This file defines DenseMapInfo traits for DenseMap.
+//
 //===----------------------------------------------------------------------===//
 
 #ifndef LLVM_ADT_DENSEMAPINFO_H
 #define LLVM_ADT_DENSEMAPINFO_H
 
+#include "llvm/ADT/Hashing.h"
 #include <cassert>
 #include <cstddef>
 #include <cstdint>
-#include <optional>
 #include <tuple>
-#include <type_traits>
 #include <utility>
 
+inline namespace __swift { inline namespace __runtime {
 namespace llvm {
-
-namespace densemap::detail {
-// A bit mixer with very low latency using one multiplications and one
-// xor-shift. The constant is from splitmix64.
-inline uint64_t mix(uint64_t x) {
-  x *= 0xbf58476d1ce4e5b9u;
-  x ^= x >> 31;
-  return x;
-}
-} // namespace densemap::detail
 
 namespace detail {
 
 /// Simplistic combination of 32-bit hash values into 32-bit hash values.
-inline unsigned combineHashValue(unsigned a, unsigned b) {
-  uint64_t x = (uint64_t)a << 32 | (uint64_t)b;
-  return (unsigned)densemap::detail::mix(x);
+static inline unsigned combineHashValue(unsigned a, unsigned b) {
+  uint64_t key = (uint64_t)a << 32 | (uint64_t)b;
+  key += ~(key << 32);
+  key ^= (key >> 22);
+  key += ~(key << 13);
+  key ^= (key >> 8);
+  key += (key << 3);
+  key ^= (key >> 15);
+  key += ~(key << 27);
+  key ^= (key >> 31);
+  return (unsigned)key;
 }
 
 } // end namespace detail
 
-/// An information struct used to provide DenseMap with the various necessary
-/// components for a given value type `T`. `Enable` is an optional additional
-/// parameter that is used to support SFINAE (generally using std::enable_if_t)
-/// in derived DenseMapInfo specializations; in non-SFINAE use cases this should
-/// just be `void`.
-template<typename T, typename Enable = void>
+template<typename T>
 struct DenseMapInfo {
   //static inline T getEmptyKey();
   //static inline T getTombstoneKey();
@@ -140,10 +132,7 @@ template<> struct DenseMapInfo<unsigned long> {
   static inline unsigned long getTombstoneKey() { return ~0UL - 1L; }
 
   static unsigned getHashValue(const unsigned long& Val) {
-    if constexpr (sizeof(Val) == 4)
-      return DenseMapInfo<unsigned>::getHashValue(Val);
-    else
-      return densemap::detail::mix(Val);
+    return (unsigned)(Val * 37UL);
   }
 
   static bool isEqual(const unsigned long& LHS, const unsigned long& RHS) {
@@ -157,7 +146,7 @@ template<> struct DenseMapInfo<unsigned long long> {
   static inline unsigned long long getTombstoneKey() { return ~0ULL - 1ULL; }
 
   static unsigned getHashValue(const unsigned long long& Val) {
-    return densemap::detail::mix(Val);
+    return (unsigned)(Val * 37ULL);
   }
 
   static bool isEqual(const unsigned long long& LHS,
@@ -239,14 +228,6 @@ struct DenseMapInfo<std::pair<T, U>> {
                                     SecondInfo::getHashValue(PairVal.second));
   }
 
-  // Expose an additional function intended to be used by other
-  // specializations of DenseMapInfo without needing to know how
-  // to combine hash values manually
-  static unsigned getHashValuePiecewise(const T &First, const U &Second) {
-    return detail::combineHashValue(FirstInfo::getHashValue(First),
-                                    SecondInfo::getHashValue(Second));
-  }
-
   static bool isEqual(const Pair &LHS, const Pair &RHS) {
     return FirstInfo::isEqual(LHS.first, RHS.first) &&
            SecondInfo::isEqual(LHS.second, RHS.second);
@@ -267,7 +248,7 @@ template <typename... Ts> struct DenseMapInfo<std::tuple<Ts...>> {
 
   template <unsigned I>
   static unsigned getHashValueImpl(const Tuple &values, std::false_type) {
-    using EltType = std::tuple_element_t<I, Tuple>;
+    using EltType = typename std::tuple_element<I, Tuple>::type;
     std::integral_constant<bool, I + 1 == sizeof...(Ts)> atEnd;
     return detail::combineHashValue(
         DenseMapInfo<EltType>::getHashValue(std::get<I>(values)),
@@ -286,7 +267,7 @@ template <typename... Ts> struct DenseMapInfo<std::tuple<Ts...>> {
 
   template <unsigned I>
   static bool isEqualImpl(const Tuple &lhs, const Tuple &rhs, std::false_type) {
-    using EltType = std::tuple_element_t<I, Tuple>;
+    using EltType = typename std::tuple_element<I, Tuple>::type;
     std::integral_constant<bool, I + 1 == sizeof...(Ts)> atEnd;
     return DenseMapInfo<EltType>::isEqual(std::get<I>(lhs), std::get<I>(rhs)) &&
            isEqualImpl<I + 1>(lhs, rhs, atEnd);
@@ -303,46 +284,14 @@ template <typename... Ts> struct DenseMapInfo<std::tuple<Ts...>> {
   }
 };
 
-// Provide DenseMapInfo for enum classes.
-template <typename Enum>
-struct DenseMapInfo<Enum, std::enable_if_t<std::is_enum_v<Enum>>> {
-  using UnderlyingType = std::underlying_type_t<Enum>;
-  using Info = DenseMapInfo<UnderlyingType>;
-
-  static Enum getEmptyKey() { return static_cast<Enum>(Info::getEmptyKey()); }
-
-  static Enum getTombstoneKey() {
-    return static_cast<Enum>(Info::getTombstoneKey());
-  }
-
-  static unsigned getHashValue(const Enum &Val) {
-    return Info::getHashValue(static_cast<UnderlyingType>(Val));
-  }
-
-  static bool isEqual(const Enum &LHS, const Enum &RHS) { return LHS == RHS; }
+template <> struct DenseMapInfo<hash_code> {
+  static inline hash_code getEmptyKey() { return hash_code(-1); }
+  static inline hash_code getTombstoneKey() { return hash_code(-2); }
+  static unsigned getHashValue(hash_code val) { return val; }
+  static bool isEqual(hash_code LHS, hash_code RHS) { return LHS == RHS; }
 };
 
-template <typename T> struct DenseMapInfo<std::optional<T>> {
-  using Optional = std::optional<T>;
-  using Info = DenseMapInfo<T>;
-
-  static inline Optional getEmptyKey() { return {Info::getEmptyKey()}; }
-
-  static inline Optional getTombstoneKey() { return {Info::getTombstoneKey()}; }
-
-  static unsigned getHashValue(const Optional &OptionalVal) {
-    return detail::combineHashValue(
-        OptionalVal.has_value(),
-        Info::getHashValue(OptionalVal.value_or(Info::getEmptyKey())));
-  }
-
-  static bool isEqual(const Optional &LHS, const Optional &RHS) {
-    if (LHS && RHS) {
-      return Info::isEqual(LHS.value(), RHS.value());
-    }
-    return !LHS && !RHS;
-  }
-};
 } // end namespace llvm
+}} // namespace swift::runtime
 
 #endif // LLVM_ADT_DENSEMAPINFO_H
