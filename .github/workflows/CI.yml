@@ -74,6 +74,9 @@ jobs:
             pip install maturin pytest
             maturin develop --all-features
             pytest python/tests
+          env:
+            CC: clang
+            CXX: clang++
   linux:
     runs-on: ${{ matrix.platform.runner }}
     strategy:
