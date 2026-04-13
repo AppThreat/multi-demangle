@@ -58,14 +58,22 @@ jobs:
           uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
           with:
             python-version: ${{ matrix.python-version }}
-        - name: Build and pytest
+        - name: Build and pytest (Linux / macOS)
+          if: runner.os != 'Windows'
           run: |
             python3 -m venv .venv
             source .venv/bin/activate
             pip install maturin pytest
             maturin develop --all-features
             pytest python/tests
-          shell: bash
+        - name: Build and pytest (Windows)
+          if: runner.os == 'Windows'
+          run: |
+            python -m venv .venv
+            .venv\Scripts\activate
+            pip install maturin pytest
+            maturin develop --all-features
+            pytest python/tests
   linux:
     runs-on: ${{ matrix.platform.runner }}
     strategy:
