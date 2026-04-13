@@ -48,7 +48,7 @@ jobs:
       strategy:
         fail-fast: false
         matrix:
-          os: [ubuntu-latest, macos-latest]
+          os: [ubuntu-latest, macos-latest, windows-latest]
           python-version: ["3.10", "3.11", "3.12", "3.13", "3.14"]
       steps:
         - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
@@ -65,7 +65,7 @@ jobs:
             pip install maturin pytest
             maturin develop --all-features
             pytest python/tests
-
+          shell: bash
   linux:
     runs-on: ${{ matrix.platform.runner }}
     strategy:
@@ -159,7 +159,7 @@ jobs:
           CXX: clang++
         with:
           target: ${{ matrix.platform.target }}
-          args: --no-default-features --features cpp,msvc,rust --release --out dist --find-interpreter
+          args: --all-features --release --out dist --find-interpreter
           sccache: false
       - name: Upload wheels
         uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
