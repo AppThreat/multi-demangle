@@ -37,6 +37,16 @@ fn test_cpp_msvc() {
 }
 
 #[test]
+fn test_cpp_gnuv2() {
+    assert_language("do_thing__C6StupidRC6StupidT1", Language::Cpp);
+}
+
+#[test]
+fn test_cpp_codewarrior() {
+    assert_language("BuildLight__9CGuiLightCFv", Language::Cpp);
+}
+
+#[test]
 fn test_objc_static() {
     assert_language("+[Foo bar:blub:]", Language::ObjC);
 }
@@ -56,6 +66,13 @@ fn test_ambiguous_cpp_rust() {
         "_ZN7content11ContentMainERKNS_17ContentMainParamsE",
         Language::Cpp,
     );
+}
+
+#[test]
+fn test_scala_native_fallback_detection() {
+    // Scala Native symbols are demangled through the Unknown-language fallback since
+    // `symbolic_common::Language` does not currently expose a dedicated variant.
+    assert_language("_SM17java.lang.IntegerD7compareiiiEo", Language::Unknown);
 }
 
 #[cfg(feature = "swift")]

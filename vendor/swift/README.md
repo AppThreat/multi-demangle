@@ -11,6 +11,8 @@ files are limited to:
 - their transitive headers/`.def` files under `vendor/swift/include`
 - the upstream license files
 
+The exact kept file list is checked in as `vendor/swift/MANIFEST.txt`.
+
 If you update the vendored Swift sources again, re-derive the file set from the actual
 compiler dependency graph and verify with:
 
