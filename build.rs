@@ -1,6 +1,9 @@
 fn main() {
     #[cfg(feature = "swift")]
     {
+        // Keep this list aligned with the minimal vendored Swift subset in `vendor/swift`.
+        // `CrashReporter.cpp` is intentionally omitted because
+        // `SWIFT_RUNTIME_NO_CRASH_REPORTER` disables that implementation path.
         let files = &[
             "src/swiftdemangle.cpp",
             "vendor/swift/lib/Demangling/Context.cpp",
@@ -11,7 +14,6 @@ fn main() {
             "vendor/swift/lib/Demangling/Punycode.cpp",
             "vendor/swift/lib/Demangling/Remangler.cpp",
             "vendor/swift/lib/Demangling/Errors.cpp",
-            "vendor/swift/lib/Demangling/CrashReporter.cpp",
         ];
 
         cc::Build::new()
