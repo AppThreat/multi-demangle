@@ -1,0 +1,55 @@
+# Vendored Swift subset manifest
+#
+# This file is intentionally checked in and enumerates every kept file under
+# vendor/swift after trimming the upstream Swift import to the minimal subset
+# required by multi-demangle.
+#
+# Regenerate by listing the current tree after validating builds/tests.
+# File count: 46
+
+LICENSE.txt
+LICENSE_LLVM.txt
+MANIFEST.txt
+README.md
+include/llvm/ADT/Hashing.h
+include/llvm/ADT/PointerIntPair.h
+include/llvm/ADT/STLExtras.h
+include/llvm/ADT/StringRef.h
+include/llvm/ADT/StringSwitch.h
+include/llvm/ADT/iterator.h
+include/llvm/ADT/iterator_range.h
+include/llvm/Support/Casting.h
+include/llvm/Support/Compiler.h
+include/llvm/Support/ErrorHandling.h
+include/llvm/Support/PointerLikeTypeTraits.h
+include/llvm/Support/SwapByteOrder.h
+include/llvm/Support/type_traits.h
+include/swift/ABI/InvertibleProtocols.def
+include/swift/AST/Ownership.h
+include/swift/AST/ReferenceStorage.def
+include/swift/Basic/InlineBitfield.h
+include/swift/Basic/LLVM.h
+include/swift/Basic/MacroRoles.def
+include/swift/Basic/STLExtras.h
+include/swift/Demangling/Demangle.h
+include/swift/Demangling/DemangleNodes.def
+include/swift/Demangling/Demangler.h
+include/swift/Demangling/Errors.h
+include/swift/Demangling/ManglingFlavor.h
+include/swift/Demangling/ManglingMacros.h
+include/swift/Demangling/ManglingUtils.h
+include/swift/Demangling/NamespaceMacros.h
+include/swift/Demangling/Punycode.h
+include/swift/Demangling/StandardTypesMangling.def
+include/swift/Demangling/ValueWitnessMangling.def
+include/swift/Strings.h
+lib/Demangling/Context.cpp
+lib/Demangling/Demangler.cpp
+lib/Demangling/DemanglerAssert.h
+lib/Demangling/Errors.cpp
+lib/Demangling/ManglingUtils.cpp
+lib/Demangling/NodeDumper.cpp
+lib/Demangling/NodePrinter.cpp
+lib/Demangling/Punycode.cpp
+lib/Demangling/Remangler.cpp
+lib/Demangling/RemanglerBase.h

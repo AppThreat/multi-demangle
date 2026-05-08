@@ -1,6 +1,6 @@
 [package]
 name = "multi-demangle"
-version = "1.0.3"
+version = "1.0.4"
 license = "MIT"
 authors = [
     "Team AppThreat <cloud@appthreat.com>"
@@ -14,7 +14,7 @@ A library to demangle symbols from various languages and compilers. Fork of symb
 """
 build = "build.rs"
 edition = "2021"
-rust-version = "1.82"
+rust-version = "1.91"
 
 exclude = ["tests/**/*"]
 
@@ -27,17 +27,23 @@ crate-type = ["cdylib", "rlib"]
 
 [features]
 extension-module = ["pyo3/extension-module"]
-default = ["cpp", "msvc", "rust", "swift"]
+default = ["codewarrior", "cpp", "gnuv2", "msvc", "rust", "scala-native", "swift"]
+codewarrior = ["cwdemangle"]
 cpp = ["cpp_demangle"]
+gnuv2 = ["gnuv2_demangle"]
 msvc = ["msvc-demangler"]
 rust = ["rustc-demangle"]
+scala-native = ["scala_native_demangle"]
 swift = ["cc"]
 
 [dependencies]
 pyo3 = { version = "0.27.0" }
+cwdemangle = { version = "1.0.0", optional = true }
 cpp_demangle = { version = "0.5.1", optional = true }
+gnuv2_demangle = { version = "0.4.0", optional = true }
 msvc-demangler = { version = "0.11.0", optional = true }
 rustc-demangle = { version = "0.1.27", optional = true }
+scala_native_demangle = { package = "scala-native-demangle", version = "0.0.6", optional = true }
 symbolic-common = "12.16.3"
 
 [build-dependencies]

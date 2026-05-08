@@ -4,8 +4,9 @@ Demangling support for various languages and compilers. Fork of [symbolic-demang
 
 Currently supported languages are:
 
-- C++ (GCC-style compilers and MSVC)
+- C++ (Itanium/GCC-style compilers, GNU v2, CodeWarrior, and MSVC)
 - Rust (both `legacy` and `v0`)
+- Scala Native (via the unknown-language fallback)
 - Swift (up to Swift 6.3)
 - ObjC (only symbol detection)
 

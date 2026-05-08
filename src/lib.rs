@@ -2,8 +2,9 @@
 //!
 //! Currently supported languages are:
 //!
-//! - C++ (GCC-style compilers and MSVC) (`features = ["cpp", "msvc"]`)
+//! - C++ (Itanium, GNU v2, CodeWarrior, and MSVC) (`features = ["cpp", "gnuv2", "codewarrior", "msvc"]`)
 //! - Rust (both `legacy` and `v0`) (`features = ["rust"]`)
+//! - Scala Native via the unknown-language fallback (`features = ["scala-native"]`)
 //! - Swift (up to Swift 6.3) (`features = ["swift"]`)
 //! - ObjC (only symbol detection)
 //!
@@ -184,6 +185,42 @@ fn try_demangle_msvc(_ident: &str, _opts: DemangleOptions) -> Option<String> {
     None
 }
 
+#[cfg(feature = "gnuv2")]
+fn try_demangle_gnuv2(ident: &str, opts: DemangleOptions) -> Option<String> {
+    let config = gnuv2_demangle::DemangleConfig::new();
+    gnuv2_demangle::demangle(ident, &config)
+        .ok()
+        .map(|demangled| normalize_cpp_like_output(&demangled, opts))
+}
+
+#[cfg(not(feature = "gnuv2"))]
+fn try_demangle_gnuv2(_ident: &str, _opts: DemangleOptions) -> Option<String> {
+    None
+}
+
+#[cfg(feature = "codewarrior")]
+fn try_demangle_codewarrior(ident: &str, opts: DemangleOptions) -> Option<String> {
+    let options = cwdemangle::DemangleOptions::default();
+    cwdemangle::demangle(ident, &options).map(|demangled| normalize_cpp_like_output(&demangled, opts))
+}
+
+#[cfg(not(feature = "codewarrior"))]
+fn try_demangle_codewarrior(_ident: &str, _opts: DemangleOptions) -> Option<String> {
+    None
+}
+
+#[cfg(feature = "scala-native")]
+fn try_demangle_scala_native(ident: &str, opts: DemangleOptions) -> Option<String> {
+    scala_native_demangle::demangle_with_defaults(ident)
+        .ok()
+        .map(|demangled| normalize_scala_native_output(&demangled, opts))
+}
+
+#[cfg(not(feature = "scala-native"))]
+fn try_demangle_scala_native(_ident: &str, _opts: DemangleOptions) -> Option<String> {
+    None
+}
+
 /// Removes a suffix consisting of $ followed by 32 hex digits, if there is one,
 /// otherwise returns its input.
 fn strip_hash_suffix(ident: &str) -> &str {
@@ -233,20 +270,162 @@ impl std::fmt::Write for BoundedString {
     }
 }
 
+fn signature_prefix_end(demangled: &str) -> Option<usize> {
+    let mut angle_depth = 0usize;
+    for (idx, ch) in demangled.char_indices() {
+        match ch {
+            '<' => angle_depth = angle_depth.saturating_add(1),
+            '>' => angle_depth = angle_depth.saturating_sub(1),
+            '(' if angle_depth == 0 => return Some(idx),
+            _ => {}
+        }
+    }
+    None
+}
+
+fn is_cpp_like_type_keyword(candidate: &str) -> bool {
+    matches!(
+        candidate,
+        "void"
+            | "bool"
+            | "char"
+            | "short"
+            | "int"
+            | "long"
+            | "float"
+            | "double"
+            | "wchar_t"
+            | "signed"
+            | "unsigned"
+            | "const"
+            | "volatile"
+    )
+}
+
+fn matching_paren_end(demangled: &str, open_idx: usize) -> Option<usize> {
+    let mut depth = 0usize;
+    for (idx, ch) in demangled[open_idx..].char_indices() {
+        match ch {
+            '(' => depth += 1,
+            ')' => {
+                depth = depth.saturating_sub(1);
+                if depth == 0 {
+                    return Some(open_idx + idx + ch.len_utf8());
+                }
+            }
+            _ => {}
+        }
+    }
+    None
+}
+
+fn cpp_like_qualifier_end(demangled: &str, mut idx: usize) -> usize {
+    while let Some(rest) = demangled.get(idx..) {
+        if let Some(next) = rest.strip_prefix(" const") {
+            idx = demangled.len() - next.len();
+        } else if let Some(next) = rest.strip_prefix(" volatile") {
+            idx = demangled.len() - next.len();
+        } else {
+            break;
+        }
+    }
+    idx
+}
+
+fn analyze_cpp_like_signature(demangled: &str) -> Option<(String, usize, usize)> {
+    for (idx, ch) in demangled.char_indices() {
+        if ch != '(' {
+            continue;
+        }
+
+        let prefix = demangled[..idx].trim_end();
+        let candidate = trim_cpp_like_name_prefix(prefix);
+        if candidate.is_empty() || is_cpp_like_type_keyword(&candidate) || !prefix.ends_with(&candidate) {
+            continue;
+        }
+
+        let params_end = matching_paren_end(demangled, idx)?;
+        let signature_end = cpp_like_qualifier_end(demangled, params_end);
+        return Some((candidate, idx, signature_end));
+    }
+
+    None
+}
+
+fn trim_cpp_like_name_prefix(prefix: &str) -> String {
+    let prefix = prefix.trim();
+    if prefix.starts_with("operator ") {
+        return prefix.to_string();
+    }
+
+    match prefix.rsplit_once(' ') {
+        Some((_, tail)) if !tail.is_empty() => tail.to_string(),
+        _ => prefix.to_string(),
+    }
+}
+
+fn strip_cpp_like_return_type(demangled: &str) -> String {
+    if let Some((name, params_start, signature_end)) = analyze_cpp_like_signature(demangled) {
+        return format!("{name}{}", &demangled[params_start..signature_end]);
+    }
+
+    let Some(sig_start) = signature_prefix_end(demangled) else {
+        return trim_cpp_like_name_prefix(demangled);
+    };
+
+    let prefix = trim_cpp_like_name_prefix(&demangled[..sig_start]);
+    format!("{prefix}{}", &demangled[sig_start..])
+}
+
+fn strip_cpp_like_parameters(demangled: &str) -> String {
+    if let Some((name, _, _)) = analyze_cpp_like_signature(demangled) {
+        return name;
+    }
+
+    let Some(sig_start) = signature_prefix_end(demangled) else {
+        return demangled.trim().to_string();
+    };
+
+    demangled[..sig_start].trim().to_string()
+}
+
+fn normalize_cpp_like_output(demangled: &str, opts: DemangleOptions) -> String {
+    let mut normalized = demangled.trim().to_string();
+
+    if !opts.return_type {
+        normalized = strip_cpp_like_return_type(&normalized);
+    }
+    if !opts.parameters {
+        normalized = strip_cpp_like_parameters(&normalized);
+    }
+
+    normalized
+}
+
+fn normalize_scala_native_output(demangled: &str, opts: DemangleOptions) -> String {
+    let mut normalized = demangled.trim().to_string();
+
+    if !opts.return_type {
+        if let Some((prefix, _)) = normalized.rsplit_once(": ") {
+            normalized = prefix.to_string();
+        }
+    }
+    if !opts.parameters {
+        if let Some(sig_start) = normalized.find('(') {
+            normalized = normalized[..sig_start].to_string();
+        }
+    }
+
+    normalized
+}
+
 fn try_demangle_cpp(ident: &str, opts: DemangleOptions) -> Option<String> {
     if is_maybe_msvc(ident) {
         return try_demangle_msvc(ident, opts);
     }
 
-    // C++ *symbols* will always start with a `_Z` prefix, but `cpp_demangle` is a bit more lenient
-    // and will also demangle bare types, turning `a` into `signed char` for example. So lets be
-    // a bit stricter and make sure we always have a `_Z` prefix.
-    if !is_maybe_cpp(ident) {
-        return None;
-    }
-
     #[cfg(feature = "cpp")]
-    {
+    if is_maybe_cpp(ident) {
         use cpp_demangle::{DemangleOptions as CppOptions, ParseOptions, Symbol as CppSymbol};
 
         let stripped = strip_hash_suffix(ident);
@@ -254,7 +433,7 @@ fn try_demangle_cpp(ident: &str, opts: DemangleOptions) -> Option<String> {
         let parse_options = ParseOptions::default().recursion_limit(160); // default is 96
         let symbol = match CppSymbol::new_with_options(stripped, &parse_options) {
             Ok(symbol) => symbol,
-            Err(_) => return None,
+            Err(_) => return try_demangle_gnuv2(ident, opts).or_else(|| try_demangle_codewarrior(ident, opts)),
         };
 
         let mut cpp_options = CppOptions::new().recursion_limit(192); // default is 128
@@ -269,15 +448,15 @@ fn try_demangle_cpp(ident: &str, opts: DemangleOptions) -> Option<String> {
         // lead to a "Billion laughs attack".
         let mut buf = BoundedString::new(4096);
 
-        symbol
+        return symbol
             .structured_demangle(&mut buf, &cpp_options)
             .ok()
-            .map(|_| buf.into_inner())
+            .map(|_| buf.into_inner());
     }
     #[cfg(not(feature = "cpp"))]
-    {
-        None
-    }
+    let _ = opts;
+
+    try_demangle_gnuv2(ident, opts).or_else(|| try_demangle_codewarrior(ident, opts))
 }
 
 #[cfg(feature = "rust")]
@@ -329,10 +508,8 @@ fn demangle_objc(ident: &str, _opts: DemangleOptions) -> String {
 fn try_demangle_objcpp(ident: &str, opts: DemangleOptions) -> Option<String> {
     if is_maybe_objc(ident) {
         Some(demangle_objc(ident, opts))
-    } else if is_maybe_cpp(ident) {
-        try_demangle_cpp(ident, opts)
     } else {
-        None
+        try_demangle_cpp(ident, opts)
     }
 }
 
@@ -431,7 +608,11 @@ impl Demangle for Name<'_> {
             }
         }
 
-        if is_maybe_cpp(self.as_str()) || is_maybe_msvc(self.as_str()) {
+        if is_maybe_cpp(self.as_str())
+            || is_maybe_msvc(self.as_str())
+            || try_demangle_gnuv2(self.as_str(), DemangleOptions::name_only()).is_some()
+            || try_demangle_codewarrior(self.as_str(), DemangleOptions::name_only()).is_some()
+        {
             return Language::Cpp;
         }
 
@@ -453,7 +634,7 @@ impl Demangle for Name<'_> {
             Language::Rust => try_demangle_rust(self.as_str(), opts),
             Language::Cpp => try_demangle_cpp(self.as_str(), opts),
             Language::Swift => try_demangle_swift(self.as_str(), opts),
-            _ => None,
+            _ => try_demangle_scala_native(self.as_str(), opts),
         }
     }
 
