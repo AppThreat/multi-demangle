@@ -721,7 +721,7 @@ mod multi_demangle {
     use pyo3::prelude::*;
 
     /// A class to configure demangling options.
-    #[pyclass(name = "DemangleOptions")]
+    #[pyclass(name = "DemangleOptions", from_py_object)]
     #[derive(Clone, Copy, Debug)]
     struct PyDemangleOptions {
         opts: DemangleOptions,
