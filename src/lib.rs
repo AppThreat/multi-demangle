@@ -40,13 +40,18 @@ use std::os::raw::{c_char, c_int};
 
 use symbolic_common::{Language, Name, NameMangling};
 
+// Feature flags forwarded over FFI to the vendored Swift demangler in `src/swiftdemangle.cpp`.
+// The values must stay in sync with the `SYMBOLIC_SWIFT_FEATURE_*` defines in that file.
 #[cfg(feature = "swift")]
 const SYMBOLIC_SWIFT_FEATURE_RETURN_TYPE: c_int = 0x1;
 #[cfg(feature = "swift")]
 const SYMBOLIC_SWIFT_FEATURE_PARAMETERS: c_int = 0x2;
 
+// Thin C ABI over the vendored Swift standard library demangler, compiled by `build.rs`.
+// Both functions return 0 on failure and non-zero on success.
 #[cfg(feature = "swift")]
 extern "C" {
+    /// Demangles a Swift symbol into the provided buffer, honoring the feature flags.
     fn multi_demangle_swift(
         sym: *const c_char,
         buf: *mut c_char,
@@ -54,6 +59,7 @@ extern "C" {
         features: c_int,
     ) -> c_int;
 
+    /// Checks whether the symbol is mangled in any known Swift scheme.
     fn multi_demangle_is_swift_symbol(sym: *const c_char) -> c_int;
 }
 
@@ -120,10 +126,15 @@ impl DemangleOptions {
     }
 }
 
+/// Detects Objective-C method selectors, which look like `-[Class method]`
+/// (instance methods) or `+[Class method]` (class methods).
 fn is_maybe_objc(ident: &str) -> bool {
     (ident.starts_with("-[") || ident.starts_with("+[")) && ident.ends_with(']')
 }
 
+/// Detects C++ symbols mangled with the Itanium ABI (`_Z...`) as emitted by GCC and Clang.
+/// The additional leading underscores cover platform prefixes added on macOS (`__Z`)
+/// and Windows (`___Z`), plus symbols passed through an extra mangling pass (`____Z`).
 fn is_maybe_cpp(ident: &str) -> bool {
     ident.starts_with("_Z")
         || ident.starts_with("__Z")
@@ -131,6 +142,7 @@ fn is_maybe_cpp(ident: &str) -> bool {
         || ident.starts_with("____Z")
 }
 
+/// Detects symbols mangled by the Microsoft Visual C++ name mangling scheme.
 fn is_maybe_msvc(ident: &str) -> bool {
     ident.starts_with('?') || ident.starts_with("@?")
 }
@@ -147,6 +159,8 @@ fn is_maybe_md5(ident: &str) -> bool {
         && ident[3..35].chars().all(|c| c.is_ascii_hexdigit())
 }
 
+/// Delegates Swift symbol detection to the vendored Swift demangler via FFI.
+/// Symbols containing interior NUL bytes cannot be passed as C strings and are rejected.
 #[cfg(feature = "swift")]
 fn is_maybe_swift(ident: &str) -> bool {
     CString::new(ident)
@@ -154,11 +168,14 @@ fn is_maybe_swift(ident: &str) -> bool {
         .unwrap_or(false)
 }
 
+/// Without the `swift` feature no symbol can be classified as Swift.
 #[cfg(not(feature = "swift"))]
 fn is_maybe_swift(_ident: &str) -> bool {
     false
 }
 
+/// Demangles MSVC-mangled symbols, mapping [`DemangleOptions`] onto the
+/// `msvc_demangler` crate's bitflags.
 #[cfg(feature = "msvc")]
 fn try_demangle_msvc(ident: &str, opts: DemangleOptions) -> Option<String> {
     use msvc_demangler::DemangleFlags as MsvcFlags;
@@ -185,6 +202,10 @@ fn try_demangle_msvc(_ident: &str, _opts: DemangleOptions) -> Option<String> {
     None
 }
 
+/// Demangles symbols using the legacy GCC 2.x mangling scheme.
+///
+/// That crate has no output options, so the complete demangled name is post-processed by
+/// [`normalize_cpp_like_output`] to honor the requested options.
 #[cfg(feature = "gnuv2")]
 fn try_demangle_gnuv2(ident: &str, opts: DemangleOptions) -> Option<String> {
     let config = gnuv2_demangle::DemangleConfig::new();
@@ -198,6 +219,10 @@ fn try_demangle_gnuv2(_ident: &str, _opts: DemangleOptions) -> Option<String> {
     None
 }
 
+/// Demangles symbols produced by the Metrowerks CodeWarrior compilers.
+///
+/// `cwdemangle` always emits a full signature, so the result is post-processed by
+/// [`normalize_cpp_like_output`] to honor the requested options.
 #[cfg(feature = "codewarrior")]
 fn try_demangle_codewarrior(ident: &str, opts: DemangleOptions) -> Option<String> {
     let options = cwdemangle::DemangleOptions::default();
@@ -209,6 +234,11 @@ fn try_demangle_codewarrior(_ident: &str, _opts: DemangleOptions) -> Option<Stri
     None
 }
 
+/// Demangles Scala Native symbols (prefixed with `_SM`).
+///
+/// This acts as the fallback for languages not detected by [`Demangle::detect_language`].
+/// The result is post-processed by [`normalize_scala_native_output`] to honor the
+/// requested options.
 #[cfg(feature = "scala-native")]
 fn try_demangle_scala_native(ident: &str, opts: DemangleOptions) -> Option<String> {
     scala_native_demangle::demangle_with_defaults(ident)
@@ -243,12 +273,17 @@ fn strip_hash_suffix(ident: &str) -> &str {
     ident
 }
 
+/// A [`std::fmt::Write`] adapter that fails once the accumulated string exceeds a fixed bound.
+///
+/// Used to cap demangled output: maliciously crafted symbols can encode a huge number of
+/// substitutions, and without a bound the expanded output could exhaust memory.
 struct BoundedString {
     str: String,
     bound: usize,
 }
 
 impl BoundedString {
+    /// Creates an empty buffer that rejects writes beyond `bound` bytes.
     fn new(bound: usize) -> Self {
         Self {
             str: String::new(),
@@ -256,6 +291,7 @@ impl BoundedString {
         }
     }
 
+    /// Consumes the buffer and returns the accumulated string.
     pub fn into_inner(self) -> String {
         self.str
     }
@@ -263,6 +299,8 @@ impl BoundedString {
 
 impl std::fmt::Write for BoundedString {
     fn write_str(&mut self, s: &str) -> std::fmt::Result {
+        // saturating_add guards against a length overflow on huge inputs,
+        // treating it the same as exceeding the bound.
         if self.str.len().saturating_add(s.len()) > self.bound {
             return Err(std::fmt::Error);
         }
@@ -270,6 +308,18 @@ impl std::fmt::Write for BoundedString {
     }
 }
 
+// -----------------------------------------------------------------------------
+// C++-like signature post-processing
+//
+// The GNU v2 and CodeWarrior demanglers always emit full signatures and offer no
+// output options, so `DemangleOptions` is honored by stripping the return type
+// and/or parameters from their textual output. These helpers parse the demangled
+// string structurally (angle brackets for templates, parentheses for parameters)
+// rather than with a full grammar.
+// -----------------------------------------------------------------------------
+
+/// Finds the byte index of the first `(` that opens a parameter list at template
+/// depth zero, i.e. not inside `<...>`. Returns `None` if there is no such paren.
 fn signature_prefix_end(demangled: &str) -> Option<usize> {
     let mut angle_depth = 0usize;
     for (idx, ch) in demangled.char_indices() {
@@ -283,6 +333,8 @@ fn signature_prefix_end(demangled: &str) -> Option<usize> {
     None
 }
 
+/// C++ type and qualifier keywords that can precede `(` in a demangled string,
+/// used to tell a leading return type apart from a function name.
 fn is_cpp_like_type_keyword(candidate: &str) -> bool {
     matches!(
         candidate,
@@ -302,6 +354,8 @@ fn is_cpp_like_type_keyword(candidate: &str) -> bool {
     )
 }
 
+/// Finds the byte index just past the `)` matching the `(` at `open_idx`.
+/// Returns `None` if the parentheses are unbalanced.
 fn matching_paren_end(demangled: &str, open_idx: usize) -> Option<usize> {
     let mut depth = 0usize;
     for (idx, ch) in demangled[open_idx..].char_indices() {
@@ -319,6 +373,8 @@ fn matching_paren_end(demangled: &str, open_idx: usize) -> Option<usize> {
     None
 }
 
+/// Advances past trailing ` const` / ` volatile` qualifiers that follow a
+/// parameter list, returning the byte index where the signature ends.
 fn cpp_like_qualifier_end(demangled: &str, mut idx: usize) -> usize {
     while let Some(rest) = demangled.get(idx..) {
         if let Some(next) = rest.strip_prefix(" const") {
@@ -332,6 +388,12 @@ fn cpp_like_qualifier_end(demangled: &str, mut idx: usize) -> usize {
     idx
 }
 
+/// Locates the function name and signature span in a demangled C++-like string.
+///
+/// Scans for a `(` that is preceded by something that looks like a function name
+/// (not a bare type keyword, not empty). On success returns the function name,
+/// the byte index of the opening `(`, and the byte index just past the closing
+/// `)` including any trailing qualifiers.
 fn analyze_cpp_like_signature(demangled: &str) -> Option<(String, usize, usize)> {
     for (idx, ch) in demangled.char_indices() {
         if ch != '(' {
@@ -340,6 +402,8 @@ fn analyze_cpp_like_signature(demangled: &str) -> Option<(String, usize, usize)>
 
         let prefix = demangled[..idx].trim_end();
         let candidate = trim_cpp_like_name_prefix(prefix);
+        // Skip candidate "names" that are actually return types (e.g. "void") or
+        // artifacts of operator/template syntax without a proper identifier.
         if candidate.is_empty() || is_cpp_like_type_keyword(&candidate) || !prefix.ends_with(&candidate) {
             continue;
         }
@@ -352,6 +416,9 @@ fn analyze_cpp_like_signature(demangled: &str) -> Option<(String, usize, usize)>
     None
 }
 
+/// Extracts the last whitespace-separated token of a signature prefix, which is
+/// the function name when a return type is present. `operator ...` names are
+/// kept verbatim since they legitimately contain spaces.
 fn trim_cpp_like_name_prefix(prefix: &str) -> String {
     let prefix = prefix.trim();
     if prefix.starts_with("operator ") {
@@ -364,11 +431,15 @@ fn trim_cpp_like_name_prefix(prefix: &str) -> String {
     }
 }
 
+/// Removes a leading return type from a demangled C++-like string, keeping the
+/// name, parameters, and trailing qualifiers. Falls back to progressively more
+/// heuristic trimming when no analyzable signature is found.
 fn strip_cpp_like_return_type(demangled: &str) -> String {
     if let Some((name, params_start, signature_end)) = analyze_cpp_like_signature(demangled) {
         return format!("{name}{}", &demangled[params_start..signature_end]);
     }
 
+    // No parameter list: drop everything before the last token (the return type).
     let Some(sig_start) = signature_prefix_end(demangled) else {
         return trim_cpp_like_name_prefix(demangled);
     };
@@ -377,6 +448,9 @@ fn strip_cpp_like_return_type(demangled: &str) -> String {
     format!("{prefix}{}", &demangled[sig_start..])
 }
 
+/// Removes the parameter list (and any trailing qualifiers) from a demangled
+/// C++-like string, leaving just the function name. Falls back to trimming the
+/// whole string when no analyzable signature is found.
 fn strip_cpp_like_parameters(demangled: &str) -> String {
     if let Some((name, _, _)) = analyze_cpp_like_signature(demangled) {
         return name;
@@ -389,6 +463,9 @@ fn strip_cpp_like_parameters(demangled: &str) -> String {
     demangled[..sig_start].trim().to_string()
 }
 
+/// Applies [`DemangleOptions`] to the full output of demanglers that cannot
+/// limit their own output (GNU v2, CodeWarrior) by stripping the return type
+/// and/or parameters as requested.
 fn normalize_cpp_like_output(demangled: &str, opts: DemangleOptions) -> String {
     let mut normalized = demangled.trim().to_string();
 
@@ -402,6 +479,9 @@ fn normalize_cpp_like_output(demangled: &str, opts: DemangleOptions) -> String {
     normalized
 }
 
+/// Applies [`DemangleOptions`] to the full output of the Scala Native demangler.
+/// Its signatures look like `pkg.Class.method(Types): ReturnType`, so the return
+/// type is everything after the last `": "` and parameters start at the first `(`.
 fn normalize_scala_native_output(demangled: &str, opts: DemangleOptions) -> String {
     let mut normalized = demangled.trim().to_string();
 
@@ -419,6 +499,12 @@ fn normalize_scala_native_output(demangled: &str, opts: DemangleOptions) -> Stri
     normalized
 }
 
+/// Demangles C++ symbols, dispatching on the mangling scheme.
+///
+/// MSVC symbols go to `msvc_demangler`; Itanium ABI symbols go to `cpp_demangle`, with
+/// GNU v2 and CodeWarrior attempted as fallbacks for symbols that Itanium parsing
+/// rejects. Cargo features disable individual backends, in which case those attempts
+/// simply return `None`.
 fn try_demangle_cpp(ident: &str, opts: DemangleOptions) -> Option<String> {
     if is_maybe_msvc(ident) {
         return try_demangle_msvc(ident, opts);
@@ -428,11 +514,15 @@ fn try_demangle_cpp(ident: &str, opts: DemangleOptions) -> Option<String> {
     if is_maybe_cpp(ident) {
         use cpp_demangle::{DemangleOptions as CppOptions, ParseOptions, Symbol as CppSymbol};
 
+        // Some linkers append a `$` + 32 hex digits hash after the mangled name,
+        // which the parser does not accept.
         let stripped = strip_hash_suffix(ident);
 
         let parse_options = ParseOptions::default().recursion_limit(160); // default is 96
         let symbol = match CppSymbol::new_with_options(stripped, &parse_options) {
             Ok(symbol) => symbol,
+            // Not a valid Itanium symbol; maybe it uses the older GNU v2
+            // or CodeWarrior scheme instead.
             Err(_) => return try_demangle_gnuv2(ident, opts).or_else(|| try_demangle_codewarrior(ident, opts)),
         };
 
@@ -456,9 +546,17 @@ fn try_demangle_cpp(ident: &str, opts: DemangleOptions) -> Option<String> {
     #[cfg(not(feature = "cpp"))]
     let _ = opts;
 
+    // The symbol did not start with a `_Z`-style prefix; it can still be GNU v2
+    // or CodeWarrior mangled, since those schemes use different prefixes.
     try_demangle_gnuv2(ident, opts).or_else(|| try_demangle_codewarrior(ident, opts))
 }
 
+/// Demangles Rust symbols in both the legacy (`_ZN...17h<hash>E`) and v0
+/// (`_R...`) schemes via `rustc_demangle`.
+///
+/// `{:#}` strips the trailing `::h<hash>` from legacy symbols. The options are
+/// ignored: legacy mangling does not encode argument types, and `rustc_demangle`
+/// exposes no output controls.
 #[cfg(feature = "rust")]
 fn try_demangle_rust(ident: &str, _opts: DemangleOptions) -> Option<String> {
     match rustc_demangle::try_demangle(ident) {
@@ -472,6 +570,11 @@ fn try_demangle_rust(_ident: &str, _opts: DemangleOptions) -> Option<String> {
     None
 }
 
+/// Demangles Swift symbols through the vendored Swift demangler (see
+/// `src/swiftdemangle.cpp`), passing the requested options as feature flags.
+///
+/// The output is written into a fixed 4 KiB buffer; symbols whose demangled form
+/// does not fit are rejected rather than truncated.
 #[cfg(feature = "swift")]
 fn try_demangle_swift(ident: &str, opts: DemangleOptions) -> Option<String> {
     let mut buf = vec![0; 4096];
@@ -501,10 +604,14 @@ fn try_demangle_swift(_ident: &str, _opts: DemangleOptions) -> Option<String> {
     None
 }
 
+/// Objective-C selectors are their own readable name, so "demangling" returns
+/// the selector unchanged.
 fn demangle_objc(ident: &str, _opts: DemangleOptions) -> String {
     ident.to_string()
 }
 
+/// Handles Objective-C++ symbols: selectors demangle to themselves, anything
+/// else falls through to the C++ demanglers.
 fn try_demangle_objcpp(ident: &str, opts: DemangleOptions) -> Option<String> {
     if is_maybe_objc(ident) {
         Some(demangle_objc(ident, opts))
@@ -593,6 +700,7 @@ pub trait Demangle {
 
 impl Demangle for Name<'_> {
     fn detect_language(&self) -> Language {
+        // An explicitly assigned language always wins over heuristics.
         if self.language() != Language::Unknown {
             return self.language();
         }
@@ -603,11 +711,15 @@ impl Demangle for Name<'_> {
 
         #[cfg(feature = "rust")]
         {
+            // `rustc_demangle` accepts both legacy and v0 symbols, and its parser
+            // is strict enough to avoid false positives on other schemes.
             if rustc_demangle::try_demangle(self.as_str()).is_ok() {
                 return Language::Rust;
             }
         }
 
+        // C++ covers several mangling schemes: Itanium and MSVC are detected by
+        // prefix, while GNU v2 and CodeWarrior require an actual demangling pass.
         if is_maybe_cpp(self.as_str())
             || is_maybe_msvc(self.as_str())
             || try_demangle_gnuv2(self.as_str(), DemangleOptions::name_only()).is_some()
@@ -624,6 +736,8 @@ impl Demangle for Name<'_> {
     }
 
     fn demangle(&self, opts: DemangleOptions) -> Option<String> {
+        // Names known to be unmangled, as well as MD5-mangled names (which are
+        // already opaque), are returned as-is.
         if matches!(self.mangling(), NameMangling::Unmangled) || is_maybe_md5(self.as_str()) {
             return Some(self.to_string());
         }
@@ -634,6 +748,8 @@ impl Demangle for Name<'_> {
             Language::Rust => try_demangle_rust(self.as_str(), opts),
             Language::Cpp => try_demangle_cpp(self.as_str(), opts),
             Language::Swift => try_demangle_swift(self.as_str(), opts),
+            // Unknown languages may still be Scala Native, which is only
+            // recognizable by attempting to demangle.
             _ => try_demangle_scala_native(self.as_str(), opts),
         }
     }
@@ -713,6 +829,12 @@ mod test {
 use pyo3::prelude::*;
 
 /// A Python module for demangling symbols, implemented in Rust.
+///
+/// Exposed API (built with the `extension-module` feature via maturin):
+/// - `DemangleOptions` — options class with `complete()` / `name_only()` constructors
+///   and `return_type` / `parameters` keyword arguments.
+/// - `demangle_symbol(mangled, options=None)` — demangle a symbol, falling back to
+///   the original string if the language is unsupported or demangling fails.
 #[cfg(feature = "extension-module")]
 #[pymodule]
 mod multi_demangle {
@@ -720,7 +842,8 @@ mod multi_demangle {
     use super::{Demangle, DemangleOptions, Name};
     use pyo3::prelude::*;
 
-    /// A class to configure demangling options.
+    /// Python-visible wrapper around the Rust [`DemangleOptions`].
+    /// `from_py_object` lets instances be passed as `options=` arguments directly.
     #[pyclass(name = "DemangleOptions", from_py_object)]
     #[derive(Clone, Copy, Debug)]
     struct PyDemangleOptions {
@@ -729,6 +852,8 @@ mod multi_demangle {
 
     #[pymethods]
     impl PyDemangleOptions {
+        /// Constructs options from two keyword arguments, both defaulting to `True`
+        /// (equivalent to a complete demangling).
         #[new]
         #[pyo3(signature = (*, return_type=true, parameters=true))]
         fn new(return_type: bool, parameters: bool) -> Self {
@@ -763,6 +888,7 @@ mod multi_demangle {
     #[pyfunction]
     #[pyo3(signature = (mangled, options = None))]
     fn demangle_symbol(mangled: &str, options: Option<PyDemangleOptions>) -> String {
+        // Without explicit options, default to a complete demangling.
         let opts = options.map_or(DemangleOptions::complete(), |o| o.opts);
         let name = Name::from(mangled);
         name.try_demangle(opts).into_owned()
