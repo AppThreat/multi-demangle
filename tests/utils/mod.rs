@@ -1,3 +1,19 @@
+/// Asserts that a list of mangled symbols demangle to the expected strings.
+///
+/// Every entry is demangled with the given language and [`DemangleOptions`]; a
+/// failed demangling shows up as `<demangling failed>`. All mismatches are
+/// collected and reported in a single assertion so one bad symbol does not hide
+/// the rest. Test files opt in with `#[macro_use] mod utils;`.
+///
+/// ```ignore
+/// use symbolic_common::Language;
+/// use multi_demangle::DemangleOptions;
+///
+/// assert_demangle!(Language::Cpp, DemangleOptions::name_only(), {
+///     "_ZN3foo3barEv" => "foo::bar",
+///     "unknown" => "<demangling failed>",
+/// });
+/// ```
 #[macro_export]
 macro_rules! assert_demangle {
     ($l:expr, $o:expr, { $($m:expr => $d:expr),* }) => {{
