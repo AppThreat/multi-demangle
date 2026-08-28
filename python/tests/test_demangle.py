@@ -210,8 +210,7 @@ def test_looks_mangled():
 
 
 def test_normalize_symbol():
-    """Tests the default symbol hygiene passes."""
-    assert multi_demangle.normalize_symbol("foo..bar") == "foo::bar"
+    """Tests the display symbol hygiene passes."""
     assert (
         multi_demangle.normalize_symbol("alloc..vec..Vec$LT$u8$GT$")
         == "alloc::vec::Vec<u8>"
@@ -227,8 +226,42 @@ def test_normalize_symbol():
     assert multi_demangle.normalize_symbol("__imp_anon.1234") == "anonymous"
     assert multi_demangle.normalize_symbol("GCC_except_table12") == "GCC_except_table"
     assert multi_demangle.normalize_symbol("@feat.00") == "SAFESEH"
+    # Generic rustc legacy escapes decode; ordinary dots are never rewritten.
+    assert multi_demangle.normalize_symbol("$u5f$x") == "_x"
+    assert multi_demangle.normalize_symbol("x...y") == "x...y"
     # Unmatched input is returned unchanged.
     assert multi_demangle.normalize_symbol("hello") == "hello"
+
+
+def test_normalize_symbol_matching_normalizer():
+    """Tests the matching-oriented passes against blint's normalize_call_target vectors."""
+    matching = multi_demangle.Normalizer.matching()
+    assert matching.normalize("memcpy@plt") == "memcpy"
+    assert matching.normalize("memcpy@GLIBC_2.14") == "memcpy"
+    assert matching.normalize("__imp_CreateFileW") == "CreateFileW"
+    # Namespaced names are left intact.
+    assert matching.normalize("APT::Container::begin") == "APT::Container::begin"
+    # Display normalizer rewrites import pointers instead of stripping them.
+    display = multi_demangle.Normalizer.display()
+    assert display.normalize("__imp_CreateFileW") == "__declspec(dllimport) CreateFileW"
+
+
+def test_classify_symbol():
+    """Tests classification without demangling."""
+    info = multi_demangle.classify_symbol("_Z1hic")
+    assert info["status"] == "mangled"
+    assert info["language"] == "cpp"
+    assert info["decorations"] == []
+
+    info = multi_demangle.classify_symbol("_Z1hic@GLIBC_2.2.5")
+    assert info["status"] == "mangled"
+    assert info["language"] == "cpp"
+    assert info["decorations"] == [{"kind": "version", "value": "GLIBC_2.2.5"}]
+
+    # `@`-containing names that are not ELF versions stay untouched.
+    info = multi_demangle.classify_symbol("foo@bar")
+    assert info["status"] == "unmangled"
+    assert info["decorations"] == []
 
 
 def test_demangle_symbol_ex():

@@ -106,7 +106,6 @@ extern "C" {
 pub struct DemangleOptions {
     return_type: bool,
     parameters: bool,
-    normalize: bool,
 }
 
 impl DemangleOptions {
@@ -115,7 +114,6 @@ impl DemangleOptions {
         Self {
             return_type: true,
             parameters: true,
-            normalize: false,
         }
     }
 
@@ -124,7 +122,6 @@ impl DemangleOptions {
         Self {
             return_type: false,
             parameters: false,
-            normalize: false,
         }
     }
 
@@ -137,21 +134,6 @@ impl DemangleOptions {
     /// Determines whether function argument types should be demangled.
     pub const fn parameters(mut self, parameters: bool) -> Self {
         self.parameters = parameters;
-        self
-    }
-
-    /// Determines whether symbol hygiene passes are applied when demangling
-    /// fails or does not apply.
-    ///
-    /// When `true`, a symbol that cannot be demangled goes through the
-    /// default hygiene passes of [`normalize_symbol`] instead of being
-    /// returned unchanged: legacy Rust `$`-escapes are decoded, Rust hash
-    /// suffixes are trimmed, import pointer decoration is rewritten, and
-    /// pseudo-symbols are mapped to readable placeholders. Successful
-    /// demangled output is never normalized, since the passes could corrupt
-    /// legitimate notation (for example Swift's `...` variadics).
-    pub const fn normalize(mut self, normalize: bool) -> Self {
-        self.normalize = normalize;
         self
     }
 }
@@ -731,8 +713,40 @@ pub trait Demangle {
     /// # }
     /// ```
     ///
-    /// [`demangle`]: trait.Demangle.html#tymethod.demangle
+    /// [`demangle`]: trait.Demangle.html#tymethod.try_demangle
     fn try_demangle(&self, opts: DemangleOptions) -> Cow<'_, str>;
+
+    /// Tries to demangle the name with the given options, falling back to
+    /// symbol hygiene instead of the raw name.
+    ///
+    /// Like [`Demangle::try_demangle`], except that a name that cannot be
+    /// demangled (or is not mangled at all) goes through the given
+    /// [`Normalizer`] rather than being returned unchanged: legacy Rust
+    /// `$`-escapes are decoded, Rust hash suffixes are trimmed, import
+    /// pointer decoration is rewritten, and pseudo-symbols are mapped to
+    /// readable placeholders. Successful demangled output is never
+    /// normalized, since the passes could corrupt legitimate notation (for
+    /// example Swift's `...` variadics).
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # #[cfg(feature = "cpp")] {
+    /// use symbolic_common::Name;
+    /// use multi_demangle::{Demangle, DemangleOptions, Normalizer};
+    ///
+    /// let name = Name::from("__imp__ZN3foo3barEv");
+    /// assert_eq!(
+    ///     name.try_demangle_normalized(DemangleOptions::complete(), &Normalizer::display()),
+    ///     "__declspec(dllimport) _ZN3foo3barEv"
+    /// );
+    /// # }
+    /// ```
+    fn try_demangle_normalized(
+        &self,
+        opts: DemangleOptions,
+        normalizer: &Normalizer,
+    ) -> Cow<'_, str>;
 }
 
 impl Demangle for Name<'_> {
@@ -793,18 +807,35 @@ impl Demangle for Name<'_> {
 
     fn try_demangle(&self, opts: DemangleOptions) -> Cow<'_, str> {
         if matches!(self.mangling(), NameMangling::Unmangled) {
-            if opts.normalize {
-                return Cow::Owned(normalize_symbol(self.as_str()).into_owned());
-            }
             return Cow::Borrowed(self.as_str());
         }
         match self.demangle(opts) {
             Some(demangled) => Cow::Owned(demangled),
-            // Demangling failed or does not apply; with `normalize` the raw
-            // symbol still goes through the hygiene passes.
-            None if opts.normalize => Cow::Owned(normalize_symbol(self.as_str()).into_owned()),
             None => Cow::Borrowed(self.as_str()),
         }
+    }
+
+    fn try_demangle_normalized(
+        &self,
+        opts: DemangleOptions,
+        normalizer: &Normalizer,
+    ) -> Cow<'_, str> {
+        if matches!(self.mangling(), NameMangling::Unmangled) {
+            return normalize_or_borrow(normalizer, self.as_str());
+        }
+        match self.demangle(opts) {
+            Some(demangled) => Cow::Owned(demangled),
+            None => normalize_or_borrow(normalizer, self.as_str()),
+        }
+    }
+}
+
+/// Applies `normalizer` to `symbol`, borrowing when the passes left it
+/// unchanged.
+fn normalize_or_borrow<'a>(normalizer: &Normalizer, symbol: &'a str) -> Cow<'a, str> {
+    match normalizer.normalize(symbol) {
+        Cow::Borrowed(_) => Cow::Borrowed(symbol),
+        Cow::Owned(owned) => Cow::Owned(owned),
     }
 }
 
@@ -876,25 +907,26 @@ use pyo3::prelude::*;
 /// Exposed API (built with the `extension-module` feature via maturin):
 /// - `DemangleOptions` — options class with `complete()` / `name_only()` constructors
 ///   and `return_type` / `parameters` / `normalize` keyword arguments.
+/// - `Normalizer` — hygiene pass set with `display()` / `matching()` constructors.
 /// - `demangle_symbol(mangled, options=None)` — demangle a symbol, falling back to
 ///   the original string if the language is unsupported or demangling fails.
 /// - `demangle_symbol_ex(mangled, options=None)` — demangle and return a dict
 ///   with the result plus language, status, and decoration classification.
+/// - `classify_symbol(mangled)` — the classification dict without demangling.
 /// - `detect_language(mangled)` — the short language name, or `None`.
 /// - `looks_mangled(mangled)` — cheap prefix-based mangling check.
-/// - `normalize_symbol(mangled)` — apply the default symbol hygiene passes.
+/// - `normalize_symbol(mangled, normalizer=None)` — apply hygiene passes.
 #[cfg(feature = "extension-module")]
 #[pymodule]
 mod multi_demangle {
     // Import necessary types from the parent `lib.rs` module
     use super::{
-        classify_symbol, is_scala_native_symbol, language_name,
-        looks_mangled as looks_mangled_impl, normalize_symbol as normalize_symbol_impl, Decoration,
-        Demangle, DemangleOptions, Name, SymbolStatus,
+        classify_symbol as classify_symbol_impl, detect_language as detect_language_impl,
+        language_name, looks_mangled as looks_mangled_impl, Decoration, Demangle, DemangleOptions,
+        Name, Normalizer, SymbolStatus,
     };
     use pyo3::prelude::*;
     use pyo3::types::PyDict;
-    use symbolic_common::Language;
 
     /// The status name, the innermost language name, and the outermost-first
     /// decoration `(kind, value)` list of a classification.
@@ -904,12 +936,14 @@ mod multi_demangle {
         Vec<(&'static str, Option<String>)>,
     );
 
-    /// Python-visible wrapper around the Rust [`DemangleOptions`].
-    /// `from_py_object` lets instances be passed as `options=` arguments directly.
+    /// Python-visible wrapper around the Rust [`DemangleOptions`] plus the
+    /// normalization fallback policy. `from_py_object` lets instances be
+    /// passed as `options=` arguments directly.
     #[pyclass(name = "DemangleOptions", from_py_object)]
     #[derive(Clone, Copy, Debug)]
     struct PyDemangleOptions {
         opts: DemangleOptions,
+        normalize: bool,
     }
 
     #[pymethods]
@@ -922,8 +956,8 @@ mod multi_demangle {
             Self {
                 opts: DemangleOptions::complete()
                     .return_type(return_type)
-                    .parameters(parameters)
-                    .normalize(normalize),
+                    .parameters(parameters),
+                normalize,
             }
         }
 
@@ -932,6 +966,7 @@ mod multi_demangle {
         fn complete() -> Self {
             Self {
                 opts: DemangleOptions::complete(),
+                normalize: false,
             }
         }
 
@@ -940,39 +975,88 @@ mod multi_demangle {
         fn name_only() -> Self {
             Self {
                 opts: DemangleOptions::name_only(),
+                normalize: false,
             }
         }
+    }
+
+    /// Python-visible wrapper around the Rust [`Normalizer`] pass set.
+    #[pyclass(name = "Normalizer", from_py_object)]
+    #[derive(Clone, Copy, Debug)]
+    struct PyNormalizer {
+        inner: Normalizer,
+    }
+
+    #[pymethods]
+    impl PyNormalizer {
+        /// Constructs the default (display-oriented) normalizer.
+        #[new]
+        fn new() -> Self {
+            Self {
+                inner: Normalizer::display(),
+            }
+        }
+
+        /// Display-oriented hygiene passes: legacy Rust escapes, Rust hash
+        /// suffixes, import pointer decoration rewriting, and pseudo-symbol
+        /// mapping.
+        #[staticmethod]
+        fn display() -> Self {
+            Self {
+                inner: Normalizer::display(),
+            }
+        }
+
+        /// Matching-oriented hygiene passes: everything `display` does, plus
+        /// `.llvm.` clone suffixes, PLT/GOT call stubs, and ELF version
+        /// suffixes, with import pointers stripped instead of rewritten so
+        /// results match the other binary's export table.
+        #[staticmethod]
+        fn matching() -> Self {
+            Self {
+                inner: Normalizer::matching(),
+            }
+        }
+
+        /// Normalizes a raw symbol with the selected passes.
+        fn normalize(&self, mangled: &str) -> String {
+            self.inner.normalize(mangled).into_owned()
+        }
+    }
+
+    /// Resolves the (options, normalize-fallback) pair for a call.
+    fn resolve_options(options: Option<PyDemangleOptions>) -> (DemangleOptions, bool) {
+        options.map_or((DemangleOptions::complete(), false), |o| {
+            (o.opts, o.normalize)
+        })
     }
 
     /// Demangles an identifier and falls back to the original symbol.
     ///
     /// This function automatically detects the language of the mangled symbol
-    /// and attempts to demangle it.
+    /// and attempts to demangle it. With `normalize=True` on the options, a
+    /// symbol that cannot be demangled goes through the display hygiene
+    /// passes instead of being returned unchanged.
     #[pyfunction]
     #[pyo3(signature = (mangled, options = None))]
     fn demangle_symbol(mangled: &str, options: Option<PyDemangleOptions>) -> String {
-        // Without explicit options, default to a complete demangling.
-        let opts = options.map_or(DemangleOptions::complete(), |o| o.opts);
+        let (opts, normalize) = resolve_options(options);
         let name = Name::from(mangled);
-        name.try_demangle(opts).into_owned()
+        if normalize {
+            name.try_demangle_normalized(opts, &Normalizer::display())
+                .into_owned()
+        } else {
+            name.try_demangle(opts).into_owned()
+        }
     }
 
     /// Detects the language of a mangled symbol.
     ///
     /// Returns the short language name (`"cpp"`, `"rust"`, `"swift"`, ...),
     /// or `None` when the symbol is not mangled or its scheme is unknown.
-    /// Scala Native has no dedicated language and is reported as
-    /// `"scala-native"` when its demangler accepts the symbol.
     #[pyfunction]
     fn detect_language(mangled: &str) -> Option<&'static str> {
-        let language = Name::from(mangled).detect_language();
-        if language != Language::Unknown {
-            return language_name(language);
-        }
-        if is_scala_native_symbol(mangled) {
-            return Some("scala-native");
-        }
-        None
+        detect_language_impl(mangled)
     }
 
     /// Cheaply checks whether a symbol looks mangled in any known scheme.
@@ -983,14 +1067,26 @@ mod multi_demangle {
         looks_mangled_impl(mangled)
     }
 
-    /// Normalizes a raw symbol with the default hygiene passes.
-    ///
-    /// Decodes legacy Rust `$`-escapes, trims Rust hash suffixes, rewrites
-    /// import pointer decoration, and maps pseudo-symbols to readable
-    /// placeholders. Returns the input unchanged when no pass matches.
+    /// Normalizes a raw symbol with the display hygiene passes, or with the
+    /// passes of a given `normalizer` (`Normalizer.display()` or
+    /// `Normalizer.matching()`).
     #[pyfunction]
-    fn normalize_symbol(mangled: &str) -> String {
-        normalize_symbol_impl(mangled).into_owned()
+    #[pyo3(signature = (mangled, normalizer = None))]
+    fn normalize_symbol(mangled: &str, normalizer: Option<PyNormalizer>) -> String {
+        let normalizer = normalizer.map_or(Normalizer::display(), |n| n.inner);
+        normalizer.normalize(mangled).into_owned()
+    }
+
+    /// Classifies a raw symbol without demangling it.
+    ///
+    /// Returns a dict with the same `status`, `language`, and `decorations`
+    /// fields as `demangle_symbol_ex`, without paying for a demangle —
+    /// suitable for deciding whether a symbol is worth demangling at all.
+    #[pyfunction]
+    fn classify_symbol<'py>(py: Python<'py>, mangled: &'py str) -> PyResult<Bound<'py, PyDict>> {
+        let dict = PyDict::new(py);
+        fill_classification(&dict, mangled)?;
+        Ok(dict)
     }
 
     /// Demangles a symbol and returns rich classification information.
@@ -1013,20 +1109,32 @@ mod multi_demangle {
         mangled: &'py str,
         options: Option<PyDemangleOptions>,
     ) -> PyResult<Bound<'py, PyDict>> {
-        let opts = options.map_or(DemangleOptions::complete(), |o| o.opts);
-        let status = classify_symbol(mangled);
-        let demangled = Name::from(mangled).try_demangle(opts).into_owned();
+        let (opts, normalize) = resolve_options(options);
+        let demangled = if normalize {
+            Name::from(mangled)
+                .try_demangle_normalized(opts, &Normalizer::display())
+                .into_owned()
+        } else {
+            Name::from(mangled).try_demangle(opts).into_owned()
+        };
 
-        let (status_name, language, decorations) = describe_status(&status);
         let dict = PyDict::new(py);
         dict.set_item("mangled", mangled)?;
         dict.set_item("demangled", demangled)?;
+        fill_classification(&dict, mangled)?;
+        Ok(dict)
+    }
+
+    /// Sets the `status`, `language`, and `decorations` items on `dict` from
+    /// the classification of `mangled`.
+    fn fill_classification(dict: &Bound<'_, PyDict>, mangled: &str) -> PyResult<()> {
+        let (status_name, language, decorations) = describe_status(&classify_symbol_impl(mangled));
         dict.set_item("status", status_name)?;
         dict.set_item("language", language)?;
         let decoration_dicts = decorations
             .into_iter()
             .map(|(kind, value)| {
-                let item = PyDict::new(py);
+                let item = PyDict::new(dict.py());
                 item.set_item("kind", kind)?;
                 if let Some(value) = value {
                     item.set_item("value", value)?;
@@ -1035,7 +1143,7 @@ mod multi_demangle {
             })
             .collect::<PyResult<Vec<Bound<'_, PyDict>>>>()?;
         dict.set_item("decorations", decoration_dicts)?;
-        Ok(dict)
+        Ok(())
     }
 
     /// Flattens a [`SymbolStatus`] into Python-friendly primitives: the

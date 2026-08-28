@@ -63,8 +63,9 @@ use multi_demangle::{
 assert!(looks_mangled("_$s8mangling12GenericUnionO3FooyACyxGSicAEmlF"));
 assert!(!looks_mangled("libc.so.6"));
 
-// Language detection.
-assert_eq!(detect_language("_ZN3foo3barEv"), symbolic_common::Language::Cpp);
+// Language detection (includes Scala Native, which has no Language variant).
+assert_eq!(detect_language("_ZN3foo3barEv"), Some("cpp"));
+assert_eq!(detect_language("libc.so.6"), None);
 
 // Classification without demangling.
 let status = classify_symbol("__imp_?foo@bar@@YAXXZ");
@@ -76,8 +77,8 @@ assert_eq!(
     }
 );
 
-// Normalization: legacy Rust `$`-escapes, Rust hash suffixes, import pointer
-// decoration, and pseudo-symbol mapping (see `Normalizer` for all passes).
+// Display-oriented normalization: legacy Rust `$`-escapes, Rust hash
+// suffixes, import pointer rewriting, and pseudo-symbol mapping.
 assert_eq!(
     normalize_symbol("std::io::Read::read_to_end::hb85a0f6802e14499"),
     "std::io::Read::read_to_end"
@@ -88,9 +89,40 @@ assert_eq!(
 );
 ```
 
-`DemangleOptions::complete().normalize(true)` applies the same default
-hygiene passes to a symbol when demangling fails or does not apply; successful
-demangled output is never modified.
+Two `Normalizer` pass sets are available: `Normalizer::display()` (the default
+of `normalize_symbol`) cleans names for humans, while `Normalizer::matching()`
+additionally strips `.llvm.` clone suffixes, PLT/GOT call stubs, and ELF
+version suffixes — and strips import pointers instead of rewriting them — so
+results match the other binary's export table:
+
+```rust
+use multi_demangle::Normalizer;
+
+assert_eq!(
+    Normalizer::matching().normalize("memcpy@plt"),
+    "memcpy"
+);
+assert_eq!(
+    Normalizer::matching().normalize("__imp_CreateFileW"),
+    "CreateFileW"
+);
+```
+
+[`Demangle::try_demangle_normalized`](crate::Demangle::try_demangle_normalized)
+combines demangling with a normalizer fallback: a symbol that cannot be
+demangled goes through the given passes instead of being returned unchanged
+(successful demangled output is never normalized).
+
+```rust
+use symbolic_common::Name;
+use multi_demangle::{Demangle, DemangleOptions, Normalizer};
+
+assert_eq!(
+    Name::from("__imp__ZN3foo3barEv")
+        .try_demangle_normalized(DemangleOptions::complete(), &Normalizer::display()),
+    "__declspec(dllimport) _ZN3foo3barEv"
+);
+```
 
 ## Python usage
 
@@ -136,6 +168,9 @@ True
 >>> multi_demangle.normalize_symbol("std::io::Read::read_to_end::hb85a0f6802e14499")
 'std::io::Read::read_to_end'
 
+>>> multi_demangle.classify_symbol("_Z1hic@GLIBC_2.2.5")
+{'status': 'mangled', 'language': 'cpp', 'decorations': [{'kind': 'version', 'value': 'GLIBC_2.2.5'}]}
+
 >>> info = multi_demangle.demangle_symbol_ex("__imp_?h@@YAXH@Z")
 >>> info["status"], info["language"], info["decorations"]
 ('mangled', 'cpp', [{'kind': 'import-pointer'}])
@@ -143,9 +178,12 @@ True
 
 `demangle_symbol_ex` returns a dict with `mangled`, `demangled`, `status`
 (`"mangled"`, `"unmangled"`, or `"unsupported"`), `language`, and an
-outermost-first `decorations` list. Passing
-`multi_demangle.DemangleOptions(normalize=True)` applies the hygiene passes to
-the fallback when demangling does not succeed.
+outermost-first `decorations` list; `classify_symbol` returns the same
+classification without demangling. Passing
+`multi_demangle.DemangleOptions(normalize=True)` applies the display hygiene
+passes to the fallback when demangling does not succeed, and
+`Normalizer.matching()` provides the pass set for cross-symbol matching
+(`memcpy@plt` → `memcpy`, `__imp_CreateFileW` → `CreateFileW`).
 
 ## Development
 

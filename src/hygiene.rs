@@ -8,7 +8,8 @@
 //!
 //! The rules encoded here mirror the heuristics that consumers of this crate
 //! (notably OWASP blint) previously had to re-implement on top of demangled
-//! strings.
+//! strings; the legacy Rust escape decoding matches `rustc_demangle`'s own
+//! printer.
 //!
 //! # Examples
 //!
@@ -37,9 +38,7 @@ use symbolic_common::{Language, Name};
 use crate::{Demangle, DemangleOptions};
 
 /// A linker or toolchain decoration detected on a raw symbol.
-///
-/// Decorations wrap another symbol; [`classify_symbol`] reports them
-/// outermost-first via [`SymbolStatus::Decorated`].
+#[non_exhaustive]
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Decoration {
     /// MSVC/PE import pointer decoration: `__imp_`, `_imp_`, `.rdata$`,
@@ -64,6 +63,7 @@ pub enum Decoration {
 /// What the demangler knows about a raw symbol without demangling it.
 ///
 /// See [`classify_symbol`] for the constructor.
+#[non_exhaustive]
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum SymbolStatus {
     /// Not mangled; nothing to do.
@@ -85,55 +85,77 @@ pub enum SymbolStatus {
 
 /// Selects which hygiene passes [`Normalizer::normalize`] applies.
 ///
-/// [`Normalizer::new`] enables the display-oriented passes (the behavior of
-/// upstream consumers): legacy Rust escape decoding, Rust hash suffix
-/// trimming, import pointer decoration, and pseudo-symbol mapping.
-/// [`Normalizer::all`] additionally enables the passes used for cross-symbol
-/// matching: `.llvm.N` suffixes, PLT/GOT call stubs, and ELF version suffixes.
+/// There are two ready-made pass sets, keyed to the two ways consumers use
+/// raw symbol names:
+///
+/// - [`Normalizer::display`] cleans a name for humans: it decodes legacy
+///   Rust escapes, trims Rust hash suffixes, rewrites import pointers to
+///   `__declspec(dllimport) ...`, and maps pseudo-symbols to readable
+///   placeholders. This mirrors the upstream consumer's display behavior.
+/// - [`Normalizer::matching`] prepares names for cross-symbol matching: it
+///   adds the `.llvm.N` clone suffix, PLT/GOT call stub, and ELF version
+///   passes, and *strips* import pointers instead of rewriting them, so the
+///   result is the name that appears in the other binary's export table.
 ///
 /// # Examples
 ///
 /// ```
 /// use multi_demangle::Normalizer;
 ///
-/// assert_eq!(Normalizer::new().normalize("__imp_anon.1234"), "anonymous");
-/// assert_eq!(Normalizer::new().normalize("foo@plt"), "foo@plt");
-/// assert_eq!(Normalizer::all().normalize("foo@plt"), "foo");
+/// assert_eq!(Normalizer::display().normalize("__imp_anon.1234"), "anonymous");
+/// assert_eq!(
+///     Normalizer::display().normalize("__imp_CreateFileW"),
+///     "__declspec(dllimport) CreateFileW"
+/// );
+/// assert_eq!(Normalizer::matching().normalize("__imp_CreateFileW"), "CreateFileW");
+/// assert_eq!(Normalizer::matching().normalize("memcpy@plt"), "memcpy");
 /// ```
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Normalizer {
     legacy_rust_escapes: bool,
     rust_hash: bool,
     llvm_suffix: bool,
-    import_pointer: bool,
+    import_pointer_rewrite: bool,
+    import_pointer_strip: bool,
     call_stubs: bool,
     elf_version: bool,
     pseudo_symbols: bool,
 }
 
 impl Normalizer {
-    /// Creates a normalizer with the default (display-oriented) passes
-    /// enabled: legacy Rust escapes, Rust hash suffixes, import pointer
-    /// decoration, and pseudo-symbol mapping.
+    /// Creates a normalizer with the display-oriented passes enabled; see
+    /// [`Normalizer::display`].
     pub const fn new() -> Self {
+        Self::display()
+    }
+
+    /// Creates a normalizer with the display-oriented passes: legacy Rust
+    /// escape decoding, Rust hash suffix trimming, import pointer rewriting,
+    /// and pseudo-symbol mapping.
+    pub const fn display() -> Self {
         Self {
             legacy_rust_escapes: true,
             rust_hash: true,
             llvm_suffix: false,
-            import_pointer: true,
+            import_pointer_rewrite: true,
+            import_pointer_strip: false,
             call_stubs: false,
             elf_version: false,
             pseudo_symbols: true,
         }
     }
 
-    /// Creates a normalizer with every hygiene pass enabled.
-    pub const fn all() -> Self {
+    /// Creates a normalizer with the matching-oriented passes: everything
+    /// [`Normalizer::display`] does, plus `.llvm.N` clone suffixes, PLT/GOT
+    /// call stubs, and ELF version suffixes, with import pointers stripped
+    /// rather than rewritten.
+    pub const fn matching() -> Self {
         Self {
             legacy_rust_escapes: true,
             rust_hash: true,
             llvm_suffix: true,
-            import_pointer: true,
+            import_pointer_rewrite: false,
+            import_pointer_strip: true,
             call_stubs: true,
             elf_version: true,
             pseudo_symbols: true,
@@ -160,8 +182,15 @@ impl Normalizer {
 
     /// Toggles rewriting of import pointer decoration
     /// (`__imp_foo` becomes `__declspec(dllimport) foo`).
-    pub const fn import_pointer(mut self, on: bool) -> Self {
-        self.import_pointer = on;
+    pub const fn import_pointer_rewrite(mut self, on: bool) -> Self {
+        self.import_pointer_rewrite = on;
+        self
+    }
+
+    /// Toggles stripping of import pointer decoration
+    /// (`__imp_foo` becomes `foo`).
+    pub const fn import_pointer_strip(mut self, on: bool) -> Self {
+        self.import_pointer_strip = on;
         self
     }
 
@@ -191,6 +220,11 @@ impl Normalizer {
     /// Returns the input unchanged (borrowed) when no pass matches, so the
     /// function is safe to apply to a table of mixed symbols. Applying the
     /// normalizer twice yields the same result as applying it once.
+    ///
+    /// The passes run in a fixed order: pseudo-symbol mapping, import
+    /// pointers, `.llvm.` suffixes, Rust hash suffixes, legacy Rust escapes,
+    /// call stubs, ELF versions. The `.llvm.` pass runs before the Rust hash
+    /// pass so combined suffixes like `::h<hash>.llvm.<n>` strip cleanly.
     pub fn normalize<'a>(&self, symbol: &'a str) -> Cow<'a, str> {
         if symbol.is_empty() {
             return Cow::Borrowed(symbol);
@@ -208,52 +242,56 @@ impl Normalizer {
             }
         }
 
+        // Strip offsets are computed against the current value first and
+        // applied through `to_mut()` afterwards, so at most one allocation
+        // happens no matter how many passes match.
         let mut current = Cow::Borrowed(symbol);
 
-        if self.import_pointer {
-            if let Some(inner) = strip_import_pointer(&current) {
-                let owned = format!("__declspec(dllimport) {inner}");
-                current = Cow::Owned(owned);
+        if self.import_pointer_rewrite {
+            if let Some(prefix_len) = import_pointer_prefix_len(&current) {
+                current
+                    .to_mut()
+                    .replace_range(0..prefix_len, "__declspec(dllimport) ");
+            }
+        } else if self.import_pointer_strip {
+            if let Some(prefix_len) = import_pointer_prefix_len(&current) {
+                current.to_mut().replace_range(0..prefix_len, "");
             }
         }
 
-        if self.legacy_rust_escapes {
+        if self.llvm_suffix {
+            if let Some(end) = llvm_suffix_end(&current) {
+                current.to_mut().truncate(end);
+            }
+        }
+
+        if self.rust_hash {
+            if let Some(end) = rust_hash_end(&current) {
+                current.to_mut().truncate(end);
+            }
+        }
+
+        // The legacy escape pass only runs on symbols that actually look
+        // like legacy Rust (a rust mangling prefix, or any `$` escape);
+        // decoding `..` into `::` on arbitrary strings would corrupt normal
+        // text such as `x...y`.
+        if self.legacy_rust_escapes && (is_rust_prefix(&current) || current.contains('$')) {
             if let Cow::Owned(decoded) = decode_legacy_rust_escapes(&current) {
                 current = Cow::Owned(decoded);
             }
         }
 
-        if self.rust_hash {
-            if let Some(stripped) = strip_rust_hash_suffix(&current) {
-                let owned = stripped.to_string();
-                current = Cow::Owned(owned);
-            }
-        }
-
-        if self.llvm_suffix {
-            if let Some(stripped) = strip_llvm_suffix(&current) {
-                let owned = stripped.to_string();
-                current = Cow::Owned(owned);
-            }
-        }
-
         if self.call_stubs {
-            let stripped = strip_thunk_prefixes(&current);
-            if stripped.len() < current.len() {
-                let owned = stripped.to_string();
-                current = Cow::Owned(owned);
-            }
-            let stripped = strip_call_stub_suffixes(&current);
-            if stripped.len() < current.len() {
-                let owned = stripped.to_string();
-                current = Cow::Owned(owned);
+            if let Some((start, at)) = call_stub_kept_range(&current) {
+                let s = current.to_mut();
+                s.replace_range(at..s.len(), "");
+                s.replace_range(0..start, "");
             }
         }
 
         if self.elf_version {
-            if let Some((base, _version)) = split_version_suffix(&current) {
-                let owned = base.to_string();
-                current = Cow::Owned(owned);
+            if let Some((base_end, _version)) = split_version(&current) {
+                current.to_mut().truncate(base_end);
             }
         }
 
@@ -267,10 +305,10 @@ impl Default for Normalizer {
     }
 }
 
-/// Normalizes a raw symbol with the default hygiene passes.
+/// Normalizes a raw symbol with the display-oriented hygiene passes.
 ///
-/// Shorthand for [`Normalizer::new`]: decodes legacy Rust `$`-escapes, trims
-/// Rust hash suffixes, rewrites import pointer decoration, and maps
+/// Shorthand for [`Normalizer::display`]: decodes legacy Rust `$`-escapes,
+/// trims Rust hash suffixes, rewrites import pointer decoration, and maps
 /// pseudo-symbols to readable placeholders. Returns the input unchanged when
 /// no pass matches.
 ///
@@ -279,14 +317,17 @@ impl Default for Normalizer {
 /// ```
 /// use multi_demangle::normalize_symbol;
 ///
-/// assert_eq!(normalize_symbol("foo..bar"), "foo::bar");
+/// assert_eq!(
+///     normalize_symbol("_ZN4core..vec..Vec$LT$u8$GT$17h0123abcdef456789E"),
+///     "_ZN4core::vec::Vec<u8>17h0123abcdef456789E"
+/// );
 /// assert_eq!(
 ///     normalize_symbol("__imp__Z1fv"),
 ///     "__declspec(dllimport) _Z1fv"
 /// );
 /// ```
 pub fn normalize_symbol(symbol: &str) -> Cow<'_, str> {
-    Normalizer::new().normalize(symbol)
+    Normalizer::display().normalize(symbol)
 }
 
 /// Cheaply checks whether a symbol looks mangled in any known scheme.
@@ -306,6 +347,9 @@ pub fn normalize_symbol(symbol: &str) -> Cow<'_, str> {
 /// assert!(looks_mangled("__ZN3std2io4Read11read_to_end17hb85a0f6802e14499E"));
 /// assert!(looks_mangled("_$s8mangling12GenericUnionO3FooyACyxGSicAEmlF"));
 /// assert!(!looks_mangled("libc.so.6"));
+/// // Rust v0 requires an uppercase start byte after `_R`, so plain C
+/// // symbols like `_Reset` or `_RtlMoveMemory` are not flagged.
+/// assert!(!looks_mangled("_Reset"));
 /// ```
 pub fn looks_mangled(symbol: &str) -> bool {
     crate::is_maybe_objc(symbol)
@@ -314,23 +358,37 @@ pub fn looks_mangled(symbol: &str) -> bool {
         || is_rust_prefix(symbol)
         || is_swift_prefix(symbol)
         || is_scala_native_prefix(symbol)
+        // Legacy Rust symbols that only partially survived a previous
+        // demangling pass keep their `$LT$`-style escapes; upstream
+        // consumers gate on this too.
+        || symbol.contains("$LT$")
 }
 
-/// Returns the detected [`Language`] of a possibly-mangled symbol, or
-/// [`Language::Unknown`] when the symbol is unmangled or its scheme is not
-/// recognized.
+/// Returns the short name of the language a symbol is mangled in
+/// (`"cpp"`, `"rust"`, `"swift"`, `"objc"`, `"scala-native"`, ...), or
+/// `None` when the symbol is unmangled or its scheme is unrecognized.
+///
+/// This is the single detection entry point shared by the Rust and Python
+/// APIs. It carries two fallbacks beyond what [`Demangle::detect_language`]
+/// reports: Swift symbols are recognized by their mangling prefix even when
+/// the `swift` backend is compiled out, and Scala Native — which has no
+/// [`Language`] variant — is recognized when its demangler accepts the
+/// symbol.
 ///
 /// # Examples
 ///
 /// ```
 /// use multi_demangle::detect_language;
-/// use symbolic_common::Language;
 ///
-/// assert_eq!(detect_language("_Z1hic"), Language::Cpp);
-/// assert_eq!(detect_language("libc.so.6"), Language::Unknown);
+/// assert_eq!(detect_language("_Z1hic"), Some("cpp"));
+/// assert_eq!(detect_language("libc.so.6"), None);
 /// ```
-pub fn detect_language(symbol: &str) -> Language {
-    Name::from(symbol).detect_language()
+pub fn detect_language(symbol: &str) -> Option<&'static str> {
+    match detected_language(symbol) {
+        Some(language) => language_name(language),
+        None if is_scala_native_symbol(symbol) => Some("scala-native"),
+        None => None,
+    }
 }
 
 /// Renders a [`Language`] as the short lowercase name used across the crate's
@@ -387,12 +445,15 @@ pub fn classify_symbol(symbol: &str) -> SymbolStatus {
         return decorated(Decoration::ExceptTable, SymbolStatus::Unmangled);
     }
 
-    if let Some(inner) = strip_import_pointer(symbol) {
-        return decorated(Decoration::ImportPointer, classify_symbol(inner));
+    if let Some(prefix_len) = import_pointer_prefix_len(symbol) {
+        return decorated(
+            Decoration::ImportPointer,
+            classify_symbol(&symbol[prefix_len..]),
+        );
     }
 
-    if let Some(inner) = strip_thunk_prefixes_once(symbol) {
-        return decorated(Decoration::CallStub, classify_symbol(inner));
+    if let Some((start, at)) = call_stub_kept_range(symbol) {
+        return decorated(Decoration::CallStub, classify_symbol(&symbol[start..at]));
     }
 
     if let Some(base) = strip_cold_section(symbol) {
@@ -403,13 +464,17 @@ pub fn classify_symbol(symbol: &str) -> SymbolStatus {
         return decorated(Decoration::LinkerHash, classify_symbol(base));
     }
 
-    // MSVC-mangled names carry `@` and `?` characters of their own; the
-    // suffix strippers below refuse symbols containing `?`.
-    if let Some(base) = strip_call_stub_suffix(symbol) {
-        return decorated(Decoration::CallStub, classify_symbol(base));
+    if let Some((base_end, version)) = split_version(symbol) {
+        return decorated(
+            Decoration::Version(version.to_string()),
+            classify_symbol(&symbol[..base_end]),
+        );
     }
-    if let Some((base, version)) = split_version_suffix(symbol) {
-        return decorated(Decoration::Version(version), classify_symbol(base));
+
+    // Scala Native has no `Language` variant; prefix-matching symbols its
+    // demangler accepts are reported as mangled in an unnamed language.
+    if is_scala_native_symbol(symbol) {
+        return SymbolStatus::Mangled(Language::Unknown);
     }
 
     match detected_language(symbol) {
@@ -459,12 +524,23 @@ fn is_language_supported(language: Language) -> bool {
 }
 
 /// Legacy Rust symbols start with `_ZN` (`__ZN` with a macOS prefix); v0
-/// symbols start with `_R` (`__R`).
+/// symbols start with `_R` (`__R`) followed by an uppercase byte, mirroring
+/// `rustc_demangle`'s own cheap validation ("paths always start with
+/// uppercase characters"). This keeps plain C symbols such as `_Reset` or
+/// `_RtlMoveMemory` from being flagged as Rust.
 fn is_rust_prefix(symbol: &str) -> bool {
-    symbol.starts_with("_ZN")
-        || symbol.starts_with("__ZN")
-        || symbol.starts_with("_R")
-        || symbol.starts_with("__R")
+    if symbol.starts_with("_ZN") || symbol.starts_with("__ZN") {
+        return true;
+    }
+    for prefix in ["_R", "__R"] {
+        if let Some(rest) = symbol.strip_prefix(prefix) {
+            return rest
+                .as_bytes()
+                .first()
+                .is_some_and(|b| b.is_ascii_uppercase());
+        }
+    }
+    false
 }
 
 /// Swift symbols use `$s`/`$S` (with an optional platform underscore prefix)
@@ -510,35 +586,90 @@ fn is_except_table_symbol(symbol: &str) -> bool {
     symbol.starts_with("GCC_except_table")
 }
 
-/// Strips the outermost import pointer prefix, if any.
-fn strip_import_pointer(symbol: &str) -> Option<&str> {
+/// MSVC-decorated symbols always begin with `?` (plain) or `@?` (import
+/// thunks); their `@` and `?` characters are never suffix material. Checking
+/// the prefix is both tighter and cheaper than scanning the whole name.
+fn is_msvc_prefixed(symbol: &str) -> bool {
+    symbol.starts_with('?') || symbol.starts_with("@?")
+}
+
+/// Byte length of the outermost import pointer prefix, if any.
+fn import_pointer_prefix_len(symbol: &str) -> Option<usize> {
     for prefix in ["__imp_", "_imp_", ".rdata$", ".refptr."] {
         if let Some(inner) = symbol.strip_prefix(prefix) {
             if !inner.is_empty() {
-                return Some(inner);
+                return Some(prefix.len());
             }
         }
     }
     None
 }
 
-/// Strips one `j_` jump-thunk prefix, if present.
-fn strip_thunk_prefixes_once(symbol: &str) -> Option<&str> {
-    let inner = symbol.strip_prefix("j_")?;
-    if inner.is_empty() {
-        None
+/// Byte index where the symbol ends after removing an LLVM clone suffix
+/// (`foo.llvm.123456`), if present.
+fn llvm_suffix_end(symbol: &str) -> Option<usize> {
+    let idx = symbol.rfind(".llvm.")?;
+    if idx == 0 {
+        return None;
+    }
+    let counter = &symbol[idx + 6..];
+    if !counter.is_empty() && counter.bytes().all(|b| b.is_ascii_digit()) {
+        Some(idx)
     } else {
-        Some(inner)
+        None
     }
 }
 
-/// Strips all `j_` jump-thunk prefixes.
-fn strip_thunk_prefixes(symbol: &str) -> &str {
-    let mut symbol = symbol;
-    while let Some(stripped) = strip_thunk_prefixes_once(symbol) {
-        symbol = stripped;
+/// Byte index where the symbol ends after removing a trailing Rust hash
+/// suffix (`::h` + at least 8 lowercase hex digits), if present.
+fn rust_hash_end(symbol: &str) -> Option<usize> {
+    let idx = symbol.rfind("::h")?;
+    if idx == 0 {
+        return None;
     }
-    symbol
+    let hash = &symbol[idx + 3..];
+    if hash.len() >= 8 && hash.bytes().all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f')) {
+        Some(idx)
+    } else {
+        None
+    }
+}
+
+/// Byte range of the symbol that remains after removing `j_` jump-thunk
+/// prefixes from the front and trailing call stub suffixes (`@plt`,
+/// `@GOTPCREL`, ...) from the back. The kept part is always contiguous.
+fn call_stub_kept_range(symbol: &str) -> Option<(usize, usize)> {
+    if is_msvc_prefixed(symbol) {
+        return None;
+    }
+    let mut start = 0;
+    while symbol[start..].starts_with("j_") {
+        start += 2;
+    }
+    let mut at = symbol.len();
+    loop {
+        let window = &symbol[start..at];
+        let Some(idx) = window.rfind('@') else {
+            break;
+        };
+        if idx == 0 || !is_call_stub_token(&window[idx + 1..]) {
+            break;
+        }
+        at = start + idx;
+    }
+    if start > 0 || at < symbol.len() {
+        Some((start, at))
+    } else {
+        None
+    }
+}
+
+/// Whether `token` names a known PLT/GOT call stub suffix.
+fn is_call_stub_token(token: &str) -> bool {
+    matches!(
+        token.to_ascii_lowercase().as_str(),
+        "plt" | "got" | "gotpcrel" | "gotoff"
+    )
 }
 
 /// Strips a trailing `.cold` cold-section suffix, if present.
@@ -561,50 +692,15 @@ fn strip_linker_hash(symbol: &str) -> Option<&str> {
     }
 }
 
-/// Whether `token` names a known PLT/GOT call stub suffix.
-fn is_call_stub_token(token: &str) -> bool {
-    matches!(
-        token.to_ascii_lowercase().as_str(),
-        "plt" | "got" | "gotpcrel" | "gotoff"
-    )
-}
-
-/// Strips one trailing call stub suffix (`@plt`, `@GOTPCREL`, ...), if any.
+/// Splits an ELF symbol version suffix, returning the byte index where the
+/// base name ends together with the version token.
 ///
-/// MSVC-mangled names carry `@` and `?` characters of their own, so symbols
-/// containing `?` are never stripped.
-fn strip_call_stub_suffix(symbol: &str) -> Option<&str> {
-    if symbol.contains('?') {
-        return None;
-    }
-    let idx = symbol.rfind('@')?;
-    if idx == 0 {
-        return None;
-    }
-    let token = &symbol[idx + 1..];
-    if is_call_stub_token(token) {
-        Some(&symbol[..idx])
-    } else {
-        None
-    }
-}
-
-/// Strips all trailing call stub suffixes.
-fn strip_call_stub_suffixes(symbol: &str) -> &str {
-    let mut symbol = symbol;
-    while let Some(stripped) = strip_call_stub_suffix(symbol) {
-        symbol = stripped;
-    }
-    symbol
-}
-
-/// Splits an ELF symbol version suffix (`foo@GLIBC_2.2.5`, with `@@` marking
-/// the default version definition), returning the base name and version.
-///
-/// MSVC-mangled names carry `@` and `?` characters of their own, so symbols
-/// containing `?` are never split.
-fn split_version_suffix(symbol: &str) -> Option<(&str, String)> {
-    if symbol.contains('?') {
+/// Real ELF versions are `@`/`@@` + a `NAME_1.2`-style token, so arbitrary
+/// `@`-containing names (`foo@bar`, `main.init@v2`) are left intact. The
+/// `@@` default-version form is accepted permissively; the single-`@` form
+/// additionally requires an underscore or a dotted number.
+fn split_version(symbol: &str) -> Option<(usize, &str)> {
+    if is_msvc_prefixed(symbol) {
         return None;
     }
     let idx = symbol.rfind('@')?;
@@ -612,79 +708,89 @@ fn split_version_suffix(symbol: &str) -> Option<(&str, String)> {
         return None;
     }
     let version = &symbol[idx + 1..];
-    if version.is_empty()
-        || !version
-            .bytes()
-            .all(|b| b.is_ascii_alphanumeric() || b".-_+".contains(&b))
-        || is_call_stub_token(version)
-    {
+    let default_form = symbol[..idx].ends_with('@');
+    if !is_version_token(version, default_form) {
         return None;
     }
-    // A double `@` marks the default version definition.
-    let base_end = if symbol[..idx].ends_with('@') {
-        idx - 1
-    } else {
-        idx
-    };
+    let base_end = if default_form { idx - 1 } else { idx };
     if base_end == 0 {
         return None;
     }
-    Some((&symbol[..base_end], version.to_string()))
+    Some((base_end, version))
 }
 
-/// Strips a trailing Rust hash suffix (`::h` + at least 8 lowercase hex
-/// digits), if present.
-fn strip_rust_hash_suffix(symbol: &str) -> Option<&str> {
-    let idx = symbol.rfind("::h")?;
-    if idx == 0 {
-        return None;
+/// Whether `version` looks like a real ELF version token.
+fn is_version_token(version: &str, default_form: bool) -> bool {
+    if version.is_empty() || is_call_stub_token(version) {
+        return false;
     }
-    let hash = &symbol[idx + 3..];
-    if hash.len() >= 8 && hash.bytes().all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f')) {
-        Some(&symbol[..idx])
-    } else {
-        None
+    if !version
+        .bytes()
+        .all(|b| b.is_ascii_alphanumeric() || b".-_+".contains(&b))
+    {
+        return false;
     }
+    if default_form {
+        return true;
+    }
+    version.contains('_') || (version.contains('.') && version.bytes().any(|b| b.is_ascii_digit()))
 }
 
-/// Strips a trailing LLVM clone suffix (`foo.llvm.123456`), if present.
-fn strip_llvm_suffix(symbol: &str) -> Option<&str> {
-    let idx = symbol.rfind(".llvm.")?;
-    if idx == 0 {
-        return None;
-    }
-    let counter = &symbol[idx + 6..];
-    if !counter.is_empty() && counter.bytes().all(|b| b.is_ascii_digit()) {
-        Some(&symbol[..idx])
-    } else {
-        None
-    }
-}
-
-/// The legacy Rust mangling escapes special characters in demangled identifiers
-/// as `$...$` sequences (and `..` for paths). The table is ordered so that the
-/// path separator is decoded first, mirroring upstream consumers.
-const RUST_LEGACY_ESCAPES: &[(&str, &str)] = &[
-    ("..", "::"),
-    ("$SP$", "@"),
-    ("$BP$", "*"),
-    ("$LT$", "<"),
-    ("$GT$", ">"),
-    ("$LP$", "("),
-    ("$RP$", ")"),
-    ("$RF$", "&"),
-    ("$C$", ","),
-    ("$u5b$", "["),
-    ("$u5d$", "]"),
-    ("$u7b$", "{"),
-    ("$u7d$", "}"),
-    ("$u3b$", ";"),
-    ("$u20$", " "),
-    ("$u27$", "'"),
+/// The named legacy Rust escapes, per `rustc_demangle`'s printer (which maps
+/// `SP` to `@`); every other character is encoded as `$u<hex>$`.
+const RUST_LEGACY_NAMED_ESCAPES: &[(&str, &str)] = &[
+    ("SP", "@"),
+    ("BP", "*"),
+    ("RF", "&"),
+    ("LT", "<"),
+    ("GT", ">"),
+    ("LP", "("),
+    ("RP", ")"),
+    ("C", ","),
 ];
 
-/// Decodes legacy Rust `$`-escapes in a single pass. Borrows the input when
-/// nothing needs decoding.
+/// A decoded legacy Rust escape: a fixed replacement or a `$u<hex>$` code
+/// point.
+enum LegacyEscape {
+    Text(&'static str),
+    Char(char),
+}
+
+/// Decodes the escape at the start of `rest`, returning the decoded value and
+/// the number of bytes consumed. Returns `None` when `rest` does not start
+/// with a valid escape.
+fn decode_legacy_escape(rest: &str) -> Option<(LegacyEscape, usize)> {
+    if !rest.starts_with('$') {
+        return None;
+    }
+    let end = rest[1..].find('$')? + 2;
+    if end == 2 {
+        return None;
+    }
+    let escape = &rest[1..end - 1];
+    for (name, replacement) in RUST_LEGACY_NAMED_ESCAPES {
+        if escape == *name {
+            return Some((LegacyEscape::Text(replacement), end));
+        }
+    }
+    let digits = escape.strip_prefix('u')?;
+    // rustc_demangle only accepts lowercase hex and refuses control code
+    // points.
+    let all_lower_hex = digits
+        .bytes()
+        .all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f'));
+    let code = u32::from_str_radix(digits, 16).ok()?;
+    let ch = char::from_u32(code)?;
+    if !all_lower_hex || ch.is_control() {
+        return None;
+    }
+    Some((LegacyEscape::Char(ch), end))
+}
+
+/// Decodes legacy Rust `$`-escapes and `..` path separators, mirroring
+/// `rustc_demangle`'s printer. Unknown escapes are kept verbatim (rather than
+/// aborting the decode) so arbitrary consumer strings survive round-trips.
+/// Borrows the input when nothing needs decoding.
 fn decode_legacy_rust_escapes(symbol: &str) -> Cow<'_, str> {
     if !(symbol.contains('$') || symbol.contains("..")) {
         return Cow::Borrowed(symbol);
@@ -694,17 +800,23 @@ fn decode_legacy_rust_escapes(symbol: &str) -> Cow<'_, str> {
     let mut idx = 0;
     while idx < symbol.len() {
         let rest = &symbol[idx..];
-        let mut matched = false;
-        for (pattern, replacement) in RUST_LEGACY_ESCAPES {
-            if rest.starts_with(pattern) {
-                out.get_or_insert_with(|| String::from(&symbol[..idx]))
-                    .push_str(replacement);
-                idx += pattern.len();
-                matched = true;
-                break;
+        if rest.starts_with("..") {
+            out.get_or_insert_with(|| String::from(&symbol[..idx]))
+                .push_str("::");
+            idx += 2;
+        } else if rest.starts_with('.') {
+            if let Some(out) = out.as_mut() {
+                out.push('.');
             }
-        }
-        if !matched {
+            idx += 1;
+        } else if let Some((decoded, consumed)) = decode_legacy_escape(rest) {
+            let out = out.get_or_insert_with(|| String::from(&symbol[..idx]));
+            match decoded {
+                LegacyEscape::Text(text) => out.push_str(text),
+                LegacyEscape::Char(ch) => out.push(ch),
+            }
+            idx += consumed;
+        } else {
             let ch = rest.chars().next().expect("non-empty remainder");
             if let Some(out) = out.as_mut() {
                 out.push(ch);
