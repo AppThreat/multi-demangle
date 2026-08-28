@@ -186,3 +186,74 @@ def test_demangle_additional_symbols(
     assert multi_demangle.demangle_symbol(
         mangled, options=multi_demangle.DemangleOptions.name_only()
     ) == demangled_simple
+
+
+def test_detect_language():
+    """Tests language detection for raw symbols."""
+    assert multi_demangle.detect_language("_Z1hic") == "cpp"
+    assert multi_demangle.detect_language("?h@@YAXH@Z") == "cpp"
+    assert multi_demangle.detect_language("_RNvNtCs1234_7mycrate3foo3bar") == "rust"
+    assert multi_demangle.detect_language("$s8mangling6curry1yyF") == "swift"
+    assert multi_demangle.detect_language("_SM17java.lang.IntegerD7compareiiiEo") == "scala-native"
+    assert multi_demangle.detect_language("libc.so.6") is None
+    assert multi_demangle.detect_language("hello") is None
+
+
+def test_looks_mangled():
+    """Tests the cheap prefix-based mangling check."""
+    assert multi_demangle.looks_mangled("_ZN3foo3barEv") is True
+    # Swift symbols, which blint's own prefix heuristic misses.
+    assert multi_demangle.looks_mangled("_$s8mangling12GenericUnionO3FooyACyxGSicAEmlF") is True
+    assert multi_demangle.looks_mangled("?h@@YAXH@Z") is True
+    assert multi_demangle.looks_mangled("libc.so.6") is False
+    assert multi_demangle.looks_mangled("hello") is False
+
+
+def test_normalize_symbol():
+    """Tests the default symbol hygiene passes."""
+    assert multi_demangle.normalize_symbol("foo..bar") == "foo::bar"
+    assert (
+        multi_demangle.normalize_symbol("alloc..vec..Vec$LT$u8$GT$")
+        == "alloc::vec::Vec<u8>"
+    )
+    assert (
+        multi_demangle.normalize_symbol("std::io::Read::read_to_end::hb85a0f6802e14499")
+        == "std::io::Read::read_to_end"
+    )
+    assert (
+        multi_demangle.normalize_symbol("__imp_?h@@YAXH@Z")
+        == "__declspec(dllimport) ?h@@YAXH@Z"
+    )
+    assert multi_demangle.normalize_symbol("__imp_anon.1234") == "anonymous"
+    assert multi_demangle.normalize_symbol("GCC_except_table12") == "GCC_except_table"
+    assert multi_demangle.normalize_symbol("@feat.00") == "SAFESEH"
+    # Unmatched input is returned unchanged.
+    assert multi_demangle.normalize_symbol("hello") == "hello"
+
+
+def test_demangle_symbol_ex():
+    """Tests demangling with structured classification info."""
+    info = multi_demangle.demangle_symbol_ex("_Z1hic")
+    assert info["mangled"] == "_Z1hic"
+    assert info["demangled"] == "h(int, char)"
+    assert info["status"] == "mangled"
+    assert info["language"] == "cpp"
+    assert info["decorations"] == []
+
+    # Decorated MSVC import: classified, with the raw fallback demangling.
+    info = multi_demangle.demangle_symbol_ex("__imp_?h@@YAXH@Z")
+    assert info["status"] == "mangled"
+    assert info["language"] == "cpp"
+    assert info["decorations"] == [{"kind": "import-pointer"}]
+    assert info["demangled"] == "__imp_?h@@YAXH@Z"
+
+    # With normalize=True the fallback goes through the hygiene passes.
+    options = multi_demangle.DemangleOptions(normalize=True)
+    info = multi_demangle.demangle_symbol_ex("__imp_?h@@YAXH@Z", options=options)
+    assert info["demangled"] == "__declspec(dllimport) ?h@@YAXH@Z"
+
+    # Versioned library names are unmangled with a version decoration.
+    info = multi_demangle.demangle_symbol_ex("libc.so.6@@GLIBC_2.2.5")
+    assert info["status"] == "unmangled"
+    assert info["language"] is None
+    assert info["decorations"] == [{"kind": "version", "value": "GLIBC_2.2.5"}]
