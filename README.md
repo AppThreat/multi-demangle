@@ -47,6 +47,83 @@ assert_eq!(
 assert_eq!(multi_demangle::demangle("_ZN3foo3barEv"), "foo::bar()");
 ```
 
+### Symbol hygiene
+
+On top of demangling, the crate provides cheap, prefix-based helpers for the
+questions consumers face around demangling: is this symbol mangled, in which
+language, and which linker decorations wrap it?
+
+```rust
+use multi_demangle::{
+    classify_symbol, detect_language, looks_mangled, normalize_symbol, Decoration,
+    SymbolStatus,
+};
+
+// Cheap mangling check; never attempts a demangling pass.
+assert!(looks_mangled("_$s8mangling12GenericUnionO3FooyACyxGSicAEmlF"));
+assert!(!looks_mangled("libc.so.6"));
+
+// Language detection (includes Scala Native, which has no Language variant).
+assert_eq!(detect_language("_ZN3foo3barEv"), Some("cpp"));
+assert_eq!(detect_language("libc.so.6"), None);
+
+// Classification without demangling.
+let status = classify_symbol("__imp_?foo@bar@@YAXXZ");
+assert_eq!(
+    status,
+    SymbolStatus::Decorated {
+        decoration: Decoration::ImportPointer,
+        inner: Box::new(SymbolStatus::Mangled(symbolic_common::Language::Cpp)),
+    }
+);
+
+// Display-oriented normalization: legacy Rust `$`-escapes, Rust hash
+// suffixes, import pointer rewriting, and pseudo-symbol mapping.
+assert_eq!(
+    normalize_symbol("std::io::Read::read_to_end::hb85a0f6802e14499"),
+    "std::io::Read::read_to_end"
+);
+assert_eq!(
+    normalize_symbol("__imp__Z1fv"),
+    "__declspec(dllimport) _Z1fv"
+);
+```
+
+Two `Normalizer` pass sets are available: `Normalizer::display()` (the default
+of `normalize_symbol`) cleans names for humans, while `Normalizer::matching()`
+additionally strips `.llvm.` clone suffixes, PLT/GOT call stubs, and ELF
+version suffixes — and strips import pointers instead of rewriting them — so
+results match the other binary's export table:
+
+```rust
+use multi_demangle::Normalizer;
+
+assert_eq!(
+    Normalizer::matching().normalize("memcpy@plt"),
+    "memcpy"
+);
+assert_eq!(
+    Normalizer::matching().normalize("__imp_CreateFileW"),
+    "CreateFileW"
+);
+```
+
+[`Demangle::try_demangle_normalized`](crate::Demangle::try_demangle_normalized)
+combines demangling with a normalizer fallback: a symbol that cannot be
+demangled goes through the given passes instead of being returned unchanged
+(successful demangled output is never normalized).
+
+```rust
+use symbolic_common::Name;
+use multi_demangle::{Demangle, DemangleOptions, Normalizer};
+
+assert_eq!(
+    Name::from("__imp__ZN3foo3barEv")
+        .try_demangle_normalized(DemangleOptions::complete(), &Normalizer::display()),
+    "__declspec(dllimport) _ZN3foo3barEv"
+);
+```
+
 ## Python usage
 
 Install the pypi package `multi-demangle`:
@@ -75,6 +152,38 @@ operator+(CRelAngle const &, CRelAngle const &)
 
 `demangle_symbol` returns the original string unchanged when the language cannot
 be detected or demangling fails.
+
+### Language detection and symbol hygiene
+
+```
+>>> multi_demangle.detect_language("_ZN3foo3barEv")
+'cpp'
+>>> multi_demangle.detect_language("libc.so.6") is None
+True
+
+>>> # cheap prefix-based check; never attempts a demangling pass
+>>> multi_demangle.looks_mangled("_$s8mangling12GenericUnionO3FooyACyxGSicAEmlF")
+True
+
+>>> multi_demangle.normalize_symbol("std::io::Read::read_to_end::hb85a0f6802e14499")
+'std::io::Read::read_to_end'
+
+>>> multi_demangle.classify_symbol("_Z1hic@GLIBC_2.2.5")
+{'status': 'mangled', 'language': 'cpp', 'decorations': [{'kind': 'version', 'value': 'GLIBC_2.2.5'}]}
+
+>>> info = multi_demangle.demangle_symbol_ex("__imp_?h@@YAXH@Z")
+>>> info["status"], info["language"], info["decorations"]
+('mangled', 'cpp', [{'kind': 'import-pointer'}])
+```
+
+`demangle_symbol_ex` returns a dict with `mangled`, `demangled`, `status`
+(`"mangled"`, `"unmangled"`, or `"unsupported"`), `language`, and an
+outermost-first `decorations` list; `classify_symbol` returns the same
+classification without demangling. Passing
+`multi_demangle.DemangleOptions(normalize=True)` applies the display hygiene
+passes to the fallback when demangling does not succeed, and
+`Normalizer.matching()` provides the pass set for cross-symbol matching
+(`memcpy@plt` → `memcpy`, `__imp_CreateFileW` → `CreateFileW`).
 
 ## Development
 
