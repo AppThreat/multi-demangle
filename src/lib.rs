@@ -943,7 +943,11 @@ where
 /// scattered back over every occurrence; otherwise every position is
 /// demangled independently. `demangle_fn` is called at most once per distinct
 /// symbol (or once per position when `unique` is off).
-fn demangle_batch_with<'a, F>(symbols: &[&'a str], unique: bool, demangle_fn: F) -> Vec<Cow<'a, str>>
+fn demangle_batch_with<'a, F>(
+    symbols: &[&'a str],
+    unique: bool,
+    demangle_fn: F,
+) -> Vec<Cow<'a, str>>
 where
     F: Fn(&'a str) -> Cow<'a, str> + Sync,
 {
@@ -1075,15 +1079,15 @@ use pyo3::prelude::*;
 mod multi_demangle {
     // Import necessary types from the parent `lib.rs` module
     use super::{
-        classify_symbol as classify_symbol_impl, demangle_many, demangle_one,
-        demangle_unique_with, detect_language as detect_language_impl, language_name,
+        classify_symbol as classify_symbol_impl, demangle_many, demangle_one, demangle_unique_with,
+        detect_language as detect_language_impl, language_name,
         looks_mangled as looks_mangled_impl, normalize_or_borrow, Decoration, Demangle,
         DemangleOptions, Name, Normalizer, SymbolStatus,
     };
-    use std::borrow::Cow;
     use pyo3::exceptions::PyTypeError;
     use pyo3::prelude::*;
     use pyo3::types::{PyAny, PyDict, PyList, PyString};
+    use std::borrow::Cow;
 
     /// The status name, the innermost language name, and the outermost-first
     /// decoration `(kind, value)` list of a classification.
@@ -1271,8 +1275,7 @@ mod multi_demangle {
         let (opts, normalize) = resolve_options(options);
         let normalizer = Normalizer::display();
         let (results, assignment) = py.detach(move || {
-            let demangle_fn =
-                |sym| demangle_py_one(sym, opts, normalize, &normalizer);
+            let demangle_fn = |sym| demangle_py_one(sym, opts, normalize, &normalizer);
             if unique {
                 demangle_unique_with(&refs, &demangle_fn)
             } else {

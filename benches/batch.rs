@@ -295,9 +295,7 @@ fn bench_batch(c: &mut Criterion) {
         group.bench_with_input(
             BenchmarkId::new("demangle_iter", name),
             &refs,
-            |b, symbols| {
-                b.iter(|| demangle_iter(symbols.iter().copied(), opts))
-            },
+            |b, symbols| b.iter(|| demangle_iter(symbols.iter().copied(), opts)),
         );
     }
     group.finish();

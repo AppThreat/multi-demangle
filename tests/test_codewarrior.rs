@@ -6,7 +6,10 @@ use symbolic_common::{Language, Name, NameMangling};
 
 fn assert_demangle_variants(symbol: &str, full: &str, no_return: &str, name_only: &str) {
     let name = Name::new(symbol, NameMangling::Unknown, Language::Cpp);
-    assert_eq!(name.demangle(DemangleOptions::complete()), Some(full.to_string()));
+    assert_eq!(
+        name.demangle(DemangleOptions::complete()),
+        Some(full.to_string())
+    );
     assert_eq!(
         name.demangle(DemangleOptions::complete().return_type(false)),
         Some(no_return.to_string())
