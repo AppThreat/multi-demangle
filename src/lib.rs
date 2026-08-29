@@ -870,14 +870,13 @@ pub fn demangle_one(sym: &str, opts: DemangleOptions) -> Cow<'_, str> {
     }
 }
 
-/// Demangles an iterator of symbols with a shared per-batch memo table.
+/// Demangles a batch of symbols with a shared per-batch memo table.
 ///
 /// Each distinct symbol is demangled at most once — symbol tables contain
 /// heavy duplication (the same import appears in `dynsym`, `symtab`, version
 /// tables, and GOT/PLT maps) — and the results are returned in input order,
-/// falling back to the original symbol where demangling fails. The returned
-/// iterator is backed by an eagerly computed batch, so all demangling happens
-/// before the first item is consumed.
+/// falling back to the original symbol where demangling fails. The batch is
+/// computed eagerly, so all demangling happens before this function returns.
 ///
 /// The `parallel` cargo feature demangles the distinct symbols on the rayon
 /// thread pool; detection and demangling are CPU-bound and use no shared
@@ -890,18 +889,51 @@ pub fn demangle_one(sym: &str, opts: DemangleOptions) -> Cow<'_, str> {
 /// use multi_demangle::{demangle_iter, DemangleOptions};
 ///
 /// let symbols = ["_ZN3foo3barEv", "libc.so.6", "_ZN3foo3barEv"];
-/// let demangled: Vec<_> = demangle_iter(symbols, DemangleOptions::complete()).collect();
+/// let demangled = demangle_iter(symbols, DemangleOptions::complete());
 /// assert_eq!(&demangled[0], "foo::bar()");
 /// assert_eq!(&demangled[1], "libc.so.6");
 /// assert_eq!(&demangled[2], "foo::bar()");
 /// # }
 /// ```
-pub fn demangle_iter<'a, I>(symbols: I, opts: DemangleOptions) -> impl Iterator<Item = Cow<'a, str>>
+pub fn demangle_iter<'a, I>(symbols: I, opts: DemangleOptions) -> Vec<Cow<'a, str>>
 where
     I: IntoIterator<Item = &'a str>,
 {
     let symbols: Vec<&'a str> = symbols.into_iter().collect();
-    demangle_batch_with(&symbols, true, |sym| demangle_one(sym, opts)).into_iter()
+    demangle_batch_with(&symbols, true, |sym| demangle_one(sym, opts))
+}
+
+/// Groups `symbols` into its distinct values, demangles each once, and
+/// returns the demangled uniques together with `assignment`, which maps every
+/// input position to the index of its unique result.
+///
+/// The mapping lets callers share one instance of a result across all its
+/// duplicates (the Python module builds a single string object per unique
+/// symbol this way).
+fn demangle_unique_with<'a, F>(
+    symbols: &[&'a str],
+    demangle_fn: &F,
+) -> (Vec<Cow<'a, str>>, Vec<usize>)
+where
+    F: Fn(&'a str) -> Cow<'a, str> + Sync,
+{
+    let mut first_index: HashMap<&'a str, usize> = HashMap::with_capacity(symbols.len());
+    let mut uniques: Vec<&'a str> = Vec::with_capacity(symbols.len());
+    let mut assignment: Vec<usize> = Vec::with_capacity(symbols.len());
+    for &sym in symbols {
+        let idx = match first_index.entry(sym) {
+            std::collections::hash_map::Entry::Vacant(entry) => {
+                let idx = uniques.len();
+                entry.insert(idx);
+                uniques.push(sym);
+                idx
+            }
+            std::collections::hash_map::Entry::Occupied(entry) => *entry.get(),
+        };
+        assignment.push(idx);
+    }
+
+    (demangle_many(&uniques, demangle_fn), assignment)
 }
 
 /// Core batch pipeline shared by [`demangle_iter`] and the Python
@@ -915,36 +947,23 @@ fn demangle_batch_with<'a, F>(symbols: &[&'a str], unique: bool, demangle_fn: F)
 where
     F: Fn(&'a str) -> Cow<'a, str> + Sync,
 {
-    if !unique {
-        return demangle_many(symbols, &demangle_fn);
-    }
-
-    // Index of the first occurrence of every distinct symbol, plus how many
-    // times it repeats.
-    let mut first_index: HashMap<&'a str, usize> = HashMap::with_capacity(symbols.len());
-    let mut uniques: Vec<&'a str> = Vec::with_capacity(symbols.len());
-    let mut remaining: Vec<usize> = Vec::with_capacity(symbols.len());
-    for &sym in symbols {
-        match first_index.entry(sym) {
-            std::collections::hash_map::Entry::Vacant(entry) => {
-                entry.insert(uniques.len());
-                uniques.push(sym);
-                remaining.push(1);
-            }
-            std::collections::hash_map::Entry::Occupied(entry) => {
-                remaining[*entry.get()] += 1;
-            }
-        }
-    }
-
-    let mut results = demangle_many(&uniques, &demangle_fn);
+    let (mut results, assignment) = if unique {
+        demangle_unique_with(symbols, &demangle_fn)
+    } else {
+        let results = demangle_many(symbols, &demangle_fn);
+        let assignment: Vec<usize> = (0..results.len()).collect();
+        (results, assignment)
+    };
 
     // Scatter: every output position owns its string without re-demangling —
     // repeated occurrences clone the demangled value, and the last occurrence
     // of each symbol moves it out of the results table.
-    let mut out = Vec::with_capacity(symbols.len());
-    for &sym in symbols {
-        let idx = first_index[sym];
+    let mut remaining = vec![0usize; results.len()];
+    for &idx in &assignment {
+        remaining[idx] += 1;
+    }
+    let mut out = Vec::with_capacity(assignment.len());
+    for &idx in &assignment {
         if remaining[idx] > 1 {
             remaining[idx] -= 1;
             out.push(Cow::clone(&results[idx]));
@@ -1042,8 +1061,9 @@ use pyo3::prelude::*;
 /// - `demangle_symbol(mangled, options=None)` — demangle a symbol, falling back to
 ///   the original string if the language is unsupported or demangling fails.
 /// - `demangle_symbols(symbols, options=None, *, unique=True)` — demangle a
-///   whole batch in one call with the GIL released; duplicates are demangled
-///   once by default and results keep the input order.
+///   batch (any iterable of strings) in one call with the GIL released;
+///   duplicates are demangled once by default and share one string object,
+///   and results keep the input order.
 /// - `demangle_symbol_ex(mangled, options=None)` — demangle and return a dict
 ///   with the result plus language, status, and decoration classification.
 /// - `classify_symbol(mangled)` — the classification dict without demangling.
@@ -1055,15 +1075,15 @@ use pyo3::prelude::*;
 mod multi_demangle {
     // Import necessary types from the parent `lib.rs` module
     use super::{
-        classify_symbol as classify_symbol_impl, demangle_batch_with, demangle_one,
-        detect_language as detect_language_impl, language_name,
+        classify_symbol as classify_symbol_impl, demangle_many, demangle_one,
+        demangle_unique_with, detect_language as detect_language_impl, language_name,
         looks_mangled as looks_mangled_impl, normalize_or_borrow, Decoration, Demangle,
         DemangleOptions, Name, Normalizer, SymbolStatus,
     };
     use std::borrow::Cow;
     use pyo3::exceptions::PyTypeError;
     use pyo3::prelude::*;
-    use pyo3::types::{PyAny, PyDict, PyString};
+    use pyo3::types::{PyAny, PyDict, PyList, PyString};
 
     /// The status name, the innermost language name, and the outermost-first
     /// decoration `(kind, value)` list of a classification.
@@ -1168,6 +1188,26 @@ mod multi_demangle {
         })
     }
 
+    /// One-symbol pipeline for the Python batch: demangle with `opts`, and
+    /// when `normalize` is set fall back to the display hygiene passes
+    /// (mirroring `Name::try_demangle_normalized` for auto-detected names,
+    /// but tying the fallback to the input's lifetime).
+    fn demangle_py_one<'a>(
+        sym: &'a str,
+        opts: DemangleOptions,
+        normalize: bool,
+        normalizer: &Normalizer,
+    ) -> Cow<'a, str> {
+        if normalize {
+            match Name::from(sym).demangle(opts) {
+                Some(demangled) => Cow::Owned(demangled),
+                None => normalize_or_borrow(normalizer, sym),
+            }
+        } else {
+            demangle_one(sym, opts)
+        }
+    }
+
     /// Demangles an identifier and falls back to the original symbol.
     ///
     /// This function automatically detects the language of the mangled symbol
@@ -1189,20 +1229,22 @@ mod multi_demangle {
 
     /// Demangles a batch of symbols in a single call.
     ///
-    /// Takes a sequence of strings and returns a list of the same length with
-    /// the results in input order; symbols that cannot be demangled keep their
-    /// original string, exactly like `demangle_symbol`.
+    /// Takes any iterable of strings (list, tuple, generator, `map` object,
+    /// ...) and returns a list of the same length with the results in input
+    /// order; symbols that cannot be demangled keep their original string,
+    /// exactly like `demangle_symbol`.
     ///
-    /// The whole batch runs with the GIL released (`Python::detach`),
-    /// so other Python threads can overlap their work with the demangling
-    /// (which also runs on the rayon pool when the `parallel` cargo feature is
-    /// enabled).
+    /// The whole batch runs with the GIL released (`Python::detach`), so other
+    /// Python threads can overlap their work with the demangling (which also
+    /// runs on the rayon pool when the `parallel` cargo feature is enabled).
     ///
     /// With `unique=True` (the default) every distinct symbol is demangled at
     /// most once and the result is fanned back out over its duplicates — real
     /// symbol tables repeat the same import across dynsym, symtab, version
-    /// tables, and GOT/PLT maps, so this removes most of the work. Pass
-    /// `unique=False` to demangle every position independently.
+    /// tables, and GOT/PLT maps, so this removes most of the work. Duplicate
+    /// positions share one string object, keeping the dedup win all the way
+    /// to the caller. Pass `unique=False` to demangle every position
+    /// independently.
     #[pyfunction]
     #[pyo3(signature = (symbols, options = None, *, unique = true))]
     fn demangle_symbols<'py>(
@@ -1210,7 +1252,7 @@ mod multi_demangle {
         symbols: &Bound<'py, PyAny>,
         options: Option<PyDemangleOptions>,
         unique: bool,
-    ) -> PyResult<Vec<String>> {
+    ) -> PyResult<Bound<'py, PyList>> {
         // A bare string would iterate per character; reject it explicitly.
         if symbols.is_instance_of::<PyString>() {
             return Err(PyTypeError::new_err(
@@ -1218,31 +1260,39 @@ mod multi_demangle {
             ));
         }
         // Owned copies are required for soundness of the GIL release below:
-        // borrowed string data could be freed by another thread mutating the
-        // sequence while the GIL is released. The copy is a memcpy per
-        // symbol, trivial next to the demangling work.
-        let symbols: Vec<String> = symbols.extract()?;
-        let refs: Vec<&str> = symbols.iter().map(String::as_str).collect();
+        // borrowed string data could be freed by another thread mutating or
+        // exhausting the iterable while the GIL is released. The copy is a
+        // memcpy per symbol, trivial next to the demangling work.
+        let mut collected: Vec<String> = Vec::new();
+        for item in symbols.try_iter()? {
+            collected.push(item?.extract::<String>()?);
+        }
+        let refs: Vec<&str> = collected.iter().map(String::as_str).collect();
         let (opts, normalize) = resolve_options(options);
-        Ok(py.detach(move || {
-            let demangled = if normalize {
-                demangle_batch_with(&refs, unique, |sym| {
-                    // Mirrors `Name::try_demangle_normalized` for
-                    // auto-detected names, but ties the fallback to the
-                    // input's lifetime.
-                    match Name::from(sym).demangle(opts) {
-                        Some(demangled) => Cow::Owned(demangled),
-                        None => normalize_or_borrow(&Normalizer::display(), sym),
-                    }
-                })
+        let normalizer = Normalizer::display();
+        let (results, assignment) = py.detach(move || {
+            let demangle_fn =
+                |sym| demangle_py_one(sym, opts, normalize, &normalizer);
+            if unique {
+                demangle_unique_with(&refs, &demangle_fn)
             } else {
-                demangle_batch_with(&refs, unique, |sym| demangle_one(sym, opts))
-            };
-            demangled
-                .into_iter()
-                .map(Cow::into_owned)
-                .collect::<Vec<String>>()
-        }))
+                let results = demangle_many(&refs, &demangle_fn);
+                let assignment: Vec<usize> = (0..results.len()).collect();
+                (results, assignment)
+            }
+        });
+
+        // One string object per distinct result; duplicate positions share it
+        // by reference instead of re-encoding the same bytes.
+        let shared: Vec<Py<PyString>> = results
+            .iter()
+            .map(|result| PyString::new(py, result.as_ref()).unbind())
+            .collect();
+        let list = PyList::empty(py);
+        for idx in assignment {
+            list.append(shared[idx].clone_ref(py))?;
+        }
+        Ok(list)
     }
 
     /// Detects the language of a mangled symbol.

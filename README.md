@@ -57,16 +57,17 @@ most once and preserves input order:
 use multi_demangle::{demangle_iter, DemangleOptions};
 
 let symbols = ["_ZN3foo3barEv", "libc.so.6", "_ZN3foo3barEv"];
-let demangled: Vec<_> = demangle_iter(symbols, DemangleOptions::complete()).collect();
+let demangled = demangle_iter(symbols, DemangleOptions::complete());
 assert_eq!(&demangled[0], "foo::bar()");
 assert_eq!(&demangled[1], "libc.so.6");
 assert_eq!(&demangled[2], "foo::bar()");
 ```
 
-`demangle_one` is the single-symbol pipeline the batch is built on (it is what
-`multi_demangle::demangle` delegates to), exposed so consumers can share it
-with their own batching. Enabling the `parallel` cargo feature (off by
-default) demangles the distinct symbols on the rayon thread pool.
+`demangle_iter` computes the whole batch eagerly and returns a `Vec` (in
+input order). `demangle_one` is the single-symbol pipeline the batch is built
+on (it is what `multi_demangle::demangle` delegates to), exposed so consumers
+can share it with their own batching. Enabling the `parallel` cargo feature
+(off by default) demangles the distinct symbols on the rayon thread pool.
 
 ```toml
 multi-demangle = { version = "...", features = ["parallel"] }
@@ -180,10 +181,12 @@ be detected or demangling fails.
 
 ### Batch demangling
 
-`demangle_symbols` demangles a whole sequence of symbols in one call, releasing
-the GIL for the duration. Duplicate symbols are demangled once by default and
-the result is fanned back out over every occurrence; results keep the input
-order and unmangled symbols pass through unchanged:
+`demangle_symbols` demangles a whole batch in one call, releasing the GIL for
+the duration. It accepts any iterable of strings — lists, tuples, generators,
+`map` objects — so hot loops can feed it without materializing first.
+Duplicate symbols are demangled once by default and share a single string
+object across their occurrences; results keep the input order and unmangled
+symbols pass through unchanged:
 
 ```
 >>> multi_demangle.demangle_symbols(["_ZN3foo3barEv", "libc.so.6", "_ZN3foo3barEv"])
@@ -199,7 +202,9 @@ order and unmangled symbols pass through unchanged:
 ```
 
 This replaces the per-symbol calls in hot loops (full symbol tables, PE import
-tables, Mach-O binding/stub maps) with a handful of batch calls.
+tables, Mach-O binding/stub maps) with a handful of batch calls. Type stubs
+ship with the wheel (`multi_demangle.pyi`), so type checkers see the full API
+including the keyword-only `unique` parameter.
 
 ### Language detection and symbol hygiene
 

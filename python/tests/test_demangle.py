@@ -206,8 +206,26 @@ def test_demangle_symbols():
     assert result[0] == result[3] == "foo::bar()"
     assert result[1] == "libc.so.6"
     assert result[2] == result[5] == "h(int, char)"
-    # Accepts any sequence of strings, not just lists.
+    # Accepts any iterable, including generators and map objects, so hot
+    # loops can feed it without materializing a list first.
     assert multi_demangle.demangle_symbols(tuple(symbols)) == result
+    assert multi_demangle.demangle_symbols(s for s in symbols) == result
+    assert multi_demangle.demangle_symbols(map(str, symbols)) == result
+
+
+def test_demangle_symbols_shares_duplicate_strings():
+    """Duplicate positions share one string object, keeping the dedup win
+    all the way to the caller."""
+    symbols = ["_ZN3foo3barEv", "_Z1hic", "_ZN3foo3barEv", "_Z1hic", "_ZN3foo3barEv"]
+    result = multi_demangle.demangle_symbols(symbols)
+    assert result[0] is result[2] is result[4]
+    assert result[1] is result[3]
+    # Distinct symbols still get distinct objects.
+    assert result[0] is not result[1]
+    # With unique=False every position is demangled independently.
+    independent = multi_demangle.demangle_symbols(symbols, unique=False)
+    assert independent == result
+    assert independent[0] is not independent[2]
 
 
 def test_demangle_symbols_unique_false():

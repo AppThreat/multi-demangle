@@ -134,14 +134,13 @@ const UNMANGLED_SAMPLES: &[&str] = &[
     "XML_Parse",
 ];
 
-/// Replicates every symbol `factor` times, mirroring a merged view of
-/// dynsym + symtab + PLT/GOT tables where the same name repeats.
+/// Replicates the symbol list `factor` times as interleaved passes, matching
+/// a merged dynsym + symtab + PLT/GOT view where the same names recur
+/// across table boundaries rather than in adjacent runs.
 fn with_table_duplication(symbols: Vec<String>, factor: usize) -> Vec<String> {
     let mut out = Vec::with_capacity(symbols.len() * factor);
-    for sym in &symbols {
-        for _ in 0..factor {
-            out.push(sym.clone());
-        }
+    for _ in 0..factor {
+        out.extend(symbols.iter().cloned());
     }
     out
 }
@@ -297,9 +296,7 @@ fn bench_batch(c: &mut Criterion) {
             BenchmarkId::new("demangle_iter", name),
             &refs,
             |b, symbols| {
-                b.iter(|| {
-                    demangle_iter(symbols.iter().copied(), opts).collect::<Vec<_>>()
-                })
+                b.iter(|| demangle_iter(symbols.iter().copied(), opts))
             },
         );
     }

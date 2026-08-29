@@ -67,6 +67,7 @@ fn batch_preserves_order_and_dedupes() {
         .collect();
 
     let actual: Vec<String> = demangle_iter(symbols.iter().map(String::as_str), DemangleOptions::complete())
+        .into_iter()
         .map(Cow::into_owned)
         .collect();
 
@@ -94,6 +95,7 @@ fn batch_matches_per_symbol_on_corpus_mix() {
         .map(|sym| demangle_one(sym, DemangleOptions::complete()).into_owned())
         .collect();
     let actual: Vec<String> = demangle_iter(symbols.iter().map(String::as_str), DemangleOptions::complete())
+        .into_iter()
         .map(Cow::into_owned)
         .collect();
     assert_eq!(actual, expected);
@@ -105,6 +107,7 @@ fn batch_all_identical() {
         std::iter::repeat_n("_Z1hic", 1000),
         DemangleOptions::complete(),
     )
+    .into_iter()
     .map(Cow::into_owned)
     .collect();
     assert_eq!(demangled.len(), 1000);
@@ -113,13 +116,13 @@ fn batch_all_identical() {
 
 #[test]
 fn batch_empty_input() {
-    let demangled: Vec<_> = demangle_iter(Vec::new(), DemangleOptions::complete()).collect();
+    let demangled = demangle_iter(Vec::new(), DemangleOptions::complete());
     assert!(demangled.is_empty());
 }
 
 #[test]
 fn batch_unmangled_stay_borrowed() {
-    let demangled: Vec<_> = demangle_iter(["libc.so.6", "main"], DemangleOptions::complete()).collect();
+    let demangled = demangle_iter(["libc.so.6", "main"], DemangleOptions::complete());
     assert_eq!(&demangled[0], "libc.so.6");
     assert_eq!(&demangled[1], "main");
     // Unmangled symbols borrow rather than allocate.
@@ -131,7 +134,35 @@ fn batch_accepts_any_into_iterator() {
     // Owned strings, references, and chained iterators all work.
     let owned = ["_Z1hic".to_string(), "libc.so.6".to_string()];
     let demangled: Vec<String> = demangle_iter(owned.iter().map(String::as_str), DemangleOptions::complete())
+        .into_iter()
         .map(Cow::into_owned)
         .collect();
     assert_eq!(demangled, vec!["h(int, char)".to_string(), "libc.so.6".to_string()]);
+}
+
+#[test]
+fn batch_fully_unique_matches_per_symbol() {
+    // A pre-deduplicated input has no memo-table reuse to exploit; the batch
+    // must still produce byte-identical output (the dedup index is not free,
+    // so this guards the unique-only path against correctness drift).
+    let symbols: Vec<String> = (0..500)
+        .map(|i| {
+            let function = format!("process{i}");
+            format!("_ZN5bench{}{function}Ev", function.len())
+        })
+        .chain((0..500).map(|i| format!("local_static_{i}")))
+        .collect();
+    let expected: Vec<String> = symbols
+        .iter()
+        .map(|sym| demangle_one(sym, DemangleOptions::complete()).into_owned())
+        .collect();
+    let actual: Vec<String> = demangle_iter(symbols.iter().map(String::as_str), DemangleOptions::complete())
+        .into_iter()
+        .map(Cow::into_owned)
+        .collect();
+    assert_eq!(actual, expected);
+    // Every generated symbol is distinct, so nothing may alias.
+    let unique_results: std::collections::HashSet<&str> =
+        actual.iter().map(String::as_str).collect();
+    assert_eq!(unique_results.len(), actual.len());
 }
