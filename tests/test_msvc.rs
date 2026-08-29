@@ -7,8 +7,8 @@
 #[macro_use]
 mod utils;
 
-use symbolic_common::Language;
 use multi_demangle::DemangleOptions;
+use symbolic_common::Language;
 
 #[test]
 fn test_msvc_demangle_without_args() {

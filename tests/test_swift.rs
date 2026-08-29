@@ -6,8 +6,8 @@
 #[macro_use]
 mod utils;
 
-use symbolic_common::Language;
 use multi_demangle::DemangleOptions;
+use symbolic_common::Language;
 
 #[test]
 fn test_demangle_swift_short() {
@@ -150,7 +150,7 @@ fn test_demangle_swift_short() {
 
         // Causes an abort with the Swift 6.0.3 demangler.
         "$sTB" => "$sTB",
-        
+
         "$s3tmp1fyySiyXzC9_ZTSPFmvEF" => "f(@convention(c, mangledCType: \"_ZTSPFmvE\") ())",
         "$s3tmp1hyyySbXzB24_ZTSU13block_pointerFvaEF" => "h(@convention(block, mangledCType: \"_ZTSU13block_pointerFvaE\") (Bool))",
         "$s13test_mangling4foo21xq_x_t16_Differentiation14DifferentiableR_AA1P13TangentVectorRp_r0_lFAdERzAdER_AafGRpzAafHRQr0_lTJrSpSr" => "reverse-mode derivative of foo2<A, B>(x: A)",
@@ -162,7 +162,7 @@ fn test_demangle_swift_short() {
         "$sS2f8mangling3FooV13TangentVectorVIegydd_SfAESfIegydd_TJOp" => "autodiff self-reordering reabstraction thunk for @escaping @callee_guaranteed (@unowned Float) -> (@unowned Float, @unowned Foo.TangentVector)",
         "$s13test_mangling3fooyS2f_S2ftFWJrSpSr" => "reverse-mode differentiability witness for foo(Float, Float, Float) with respect to parameters {0} and results {0}",
         "$s13test_mangling3fooyS2f_xq_t16_Differentiation14DifferentiableR_r0_lFAcDRzAcDR_r0_lWJrUSSpSr" => "reverse-mode differentiability witness for foo<A, B>(Float, A, B) with respect to parameters {1, 2} and results {0} with <A, B>",
-        
+
         "$s14swift_ide_test14myColorLiteral3red5green4blue5alphaAA0E0VSf_S3ftcfm" => "myColorLiteral(red: Float, green: Float, blue: Float, alpha: Float)",
         "$s14swift_ide_test10myFilenamexfm" => "myFilename",
         "$s9MacroUser13testStringify1a1bySi_SitF9stringifyfMf1_" => "freestanding macro expansion #3 of stringify in testStringify(a: Int, b: Int)",
@@ -387,4 +387,3 @@ fn test_swift_abnormal_manglings() {
         "type metadata for ((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((<<too complex>>))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))" => "type metadata for ((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((<<too complex>>))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))",
     });
 }
-

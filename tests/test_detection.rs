@@ -1,7 +1,7 @@
 //! Language auto-detection tests
 
-use symbolic_common::{Language, Name};
 use multi_demangle::Demangle;
+use symbolic_common::{Language, Name};
 
 use similar_asserts::assert_eq;
 

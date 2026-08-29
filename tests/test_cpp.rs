@@ -7,8 +7,8 @@
 #[macro_use]
 mod utils;
 
-use symbolic_common::Language;
 use multi_demangle::{Demangle, DemangleOptions};
+use symbolic_common::Language;
 
 #[test]
 fn test_demangle_cpp() {
@@ -80,8 +80,5 @@ fn test_deep_recursion() {
 #[test]
 fn test_broken_recursion() {
     let s = "_ZUlzjjlZZL1zStUlSt7j_Z3kjIIjIjL1vfIIEEEjzjjfjzSt7j_Z3kjIIjfjzL4t3kjIIjfjtUlSt7j_Z3kjIIjIjL1vfIIEEEjzjjfjzSt7j_Z3kjIIjfjzL4t3kjIIjfjzL4t7IjIjjzjjzSt7j_Z3kjIIjfjzStfjzSt7j_ZA3kjIIjIjL1vfIIEEEjzjjfjzSt7j_Z3kjIIjIjL1vfIIEEEjzjjfjzSt7j_Z3kjIIjfjzL4t3kjIIjzL4t7IjIjjzjjzSt7j_Z3kjIIjfjzStfjzSt7j_ZA3kjIIjIjL1vfIIEEEjzjjfjzSt7j_Z3kjIIjIjL1vfIIEEEjzjjfjzSt7j_Z3kjIIjfjzL4t3kjIIjfjzL4t7IjIjL1vfIIEEEjzjjSI";
-    assert_eq!(
-        multi_demangle::demangle(s),
-        std::borrow::Cow::Borrowed(s)
-    );
+    assert_eq!(multi_demangle::demangle(s), std::borrow::Cow::Borrowed(s));
 }

@@ -47,6 +47,16 @@ assert_eq!(
 assert_eq!(multi_demangle::demangle("_ZN3foo3barEv"), "foo::bar()");
 ```
 
+The `cli` cargo feature (on by default) pulls in the argument parser for the
+binary. Library-only consumers can drop it by re-enabling the backends
+explicitly:
+
+```toml
+multi-demangle = { version = "...", default-features = false, features = [
+  "cpp", "gnuv2", "codewarrior", "msvc", "rust", "scala-native", "swift",
+] }
+```
+
 ### Batch demangling
 
 Symbol tables repeat the same symbol many times (dynsym, symtab, version
@@ -72,6 +82,51 @@ can share it with their own batching. Enabling the `parallel` cargo feature
 ```toml
 multi-demangle = { version = "...", features = ["parallel"] }
 ```
+
+### Structured demangling
+
+`demangle_structured` extracts typed fields from the demangled rendering —
+namespace path, leaf name, entity kind, generics, parameters, return type,
+and compiler disambiguation hashes — so consumers do not have to re-parse
+text:
+
+```rust
+use symbolic_common::Name;
+use multi_demangle::{Demangle, DemangleOptions};
+
+let info = Name::from("_ZN3std2io4Read11read_to_end17hb85a0f6802e14499E")
+    .demangle_structured(DemangleOptions::complete())
+    .unwrap();
+assert_eq!(info.namespace, ["std", "io", "Read"]);
+assert_eq!(info.name, "read_to_end");
+assert_eq!(info.kind, multi_demangle::DemangledKind::Method);
+assert_eq!(info.hash.as_deref(), Some("hb85a0f6802e14499"));
+assert_eq!(info.parameters, None); // legacy Rust encodes no parameter types
+```
+
+`DemangledKind` classifies the entity (best-effort, modeled on the primary
+consumer's tables): `Function`, `Method`, `Closure`, `Glue` (CRT/linker glue
+and drop glue), `Intrinsic`, `MethodThunk`, `VirtualTable`, `TypeInfo`,
+`ObjCMethod { class_method }`, `StaticVariable`, or `Other`.
+
+`<Type as Trait>::` and `<impl Trait for Type>::` prefixes are reduced to the
+implementing type in the namespace, and trailing Rust hashes plus `.llvm.N`
+clone counters are captured into `hash` instead of being silently stripped.
+
+Where a backend exposes its parse tree, the fields come from the AST rather
+than text: MSVC symbols are walked through `msvc_demangler`'s parse tree
+(which is how a data symbol like `?value@ns@@3HA` is correctly a
+`StaticVariable` and `??_7Bar@@6B@` a `VirtualTable`), Swift symbols through
+the vendored demangler's node tree (accessors, initializers, and closures
+keep their kinds; accessor names resolve to the wrapped property), and
+Itanium kinds come from the mangling grammar's own prefixes (`_ZGV` guard
+variables, `_ZTV`/`_ZTC` vtables, `_ZTh`/`_ZTv` thunks). Text-derived
+extraction remains the fallback for every language.
+
+One stated Itanium limitation: thunk symbols (`_ZTh`/`_ZTv`) classify with
+the right kind, but their target identity is not extracted — the leaf name
+stays the full brace rendering (`{virtual override thunk(...)}`) since the
+demangled form is descriptive and no Itanium AST is available to walk.
 
 ### Symbol hygiene
 
@@ -237,6 +292,103 @@ classification without demangling. Passing
 passes to the fallback when demangling does not succeed, and
 `Normalizer.matching()` provides the pass set for cross-symbol matching
 (`memcpy@plt` → `memcpy`, `__imp_CreateFileW` → `CreateFileW`).
+
+### Structured demangling
+
+```
+>>> info = multi_demangle.demangle_symbol_structured("_ZN3std2io4Read11read_to_end17hb85a0f6802e14499E")
+>>> info.language
+'rust'
+>>> info.name
+'read_to_end'
+>>> info.namespace
+['std', 'io', 'Read']
+>>> info.kind
+'method'
+>>> info.hash
+'hb85a0f6802e14499'
+>>> info.parameters is None  # legacy Rust encodes no parameter types
+True
+```
+
+`demangle_symbol_structured` returns a `DemangledInfo` with read-only
+getters (`display`, `simple`, `namespace`, `name`, `kind`, `parameters`,
+`return_type`, `hash`, `template_args`, `is_generic`, `mangled`, and
+`class_method` for ObjC) plus `to_dict()` for JSON serialization. It returns
+`None` for symbols that are not mangled in any known scheme.
+
+## CLI
+
+A `c++filt`-style command line tool ships with the crate. Install it with a
+Rust toolchain (or use `cargo run --` from a checkout):
+
+```
+cargo install multi-demangle
+```
+
+With arguments, each argument is demangled to one output line. Without
+arguments, the tool runs in **filter mode**: lines are read from stdin, every
+whitespace-separated token that looks mangled is demangled, and everything
+else passes through unchanged — so it composes with `nm` / `objdump`
+pipelines:
+
+```
+$ multi-demangle _ZN3foo3barEv
+foo::bar()
+
+$ nm libfoo.so | multi-demangle
+$ nm libfoo.so | sort | uniq -c | multi-demangle -n --normalize
+```
+
+Hyphen-prefixed symbols such as ObjC selectors are accepted as values, so the
+obvious invocation just works (and `--` works too):
+
+```
+$ multi-demangle '-[Foo bar:blub:]'
+-[Foo bar:blub:]
+```
+
+Options:
+
+| Flag | Effect |
+| ---- | ------ |
+| `-n, --name-only` | names only, no parameters or return types |
+| `--no-parameters` / `--no-return-type` | individual output toggles |
+| `-l, --language <LANG>` | force a backend instead of auto-detecting (`cpp`, `rust`, `swift`, `objc`, `objcpp`, `scala-native`) |
+| `--normalize` | apply the symbol hygiene passes (`__imp_`, `@plt`, ELF versions, Rust hash suffixes and `$`-escapes, `.llvm.` clone suffixes, pseudo-symbols) to symbols that cannot be demangled, then demangle the cleaned symbol when it succeeds |
+| `-s, --structured` | print one JSON record per symbol with its status, language, linker decorations, and the structured fields (name, namespace, kind, parameters, return type, generics, hash) |
+| `--list-languages` | print the supported languages and the backends enabled in this build |
+| `--color=auto/always/never` | colorize successfully demangled output (auto is the default) |
+
+`multi-demangle --version` prints the crate version together with the enabled
+backends. Exit code is `0` on success — including when nothing looked mangled
+— and `1` on I/O errors.
+
+```
+$ multi-demangle -s "_Z1hic@GLIBC_2.2.5"
+{"mangled":"_Z1hic@GLIBC_2.2.5","demangled":"_Z1hic@GLIBC_2.2.5","status":"mangled","language":"cpp","decorations":[{"kind":"version","value":"GLIBC_2.2.5"}]}
+```
+
+In filter mode with `--structured`, records are emitted only for tokens that
+look like symbols or that the pipeline changed — under `--normalize`, a
+cleaned token such as `bar.llvm.12345` is reported — while plain addresses,
+type letters, and words are skipped.
+
+`--normalize` never touches directly successful demangled output; the passes
+run on the symbols the demanglers rejected, and the cleaned symbol is then
+demangled once more — a version-suffixed `_Z1hic@GLIBC_2.2.5` comes out as
+`h(int, char)`. Because `.llvm.` clone suffixes and legacy Rust `$`-escapes
+appear on names that do not classify as mangled, filter mode processes every
+token while `--normalize` is active:
+
+```
+$ multi-demangle --normalize bar.llvm.12345
+bar
+$ multi-demangle "_Z1hic@GLIBC_2.2.5"
+_Z1hic@GLIBC_2.2.5
+$ multi-demangle --normalize "_Z1hic@GLIBC_2.2.5"
+h(int, char)
+```
 
 ## Development
 

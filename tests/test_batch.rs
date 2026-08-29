@@ -42,7 +42,10 @@ fn demangle_one_matches_demangle() {
         "libc.so.6",
         "",
     ] {
-        assert_eq!(demangle_one(sym, DemangleOptions::complete()), demangle(sym));
+        assert_eq!(
+            demangle_one(sym, DemangleOptions::complete()),
+            demangle(sym)
+        );
     }
 }
 
@@ -66,10 +69,13 @@ fn batch_preserves_order_and_dedupes() {
         .map(|sym| demangle_one(sym, DemangleOptions::complete()).into_owned())
         .collect();
 
-    let actual: Vec<String> = demangle_iter(symbols.iter().map(String::as_str), DemangleOptions::complete())
-        .into_iter()
-        .map(Cow::into_owned)
-        .collect();
+    let actual: Vec<String> = demangle_iter(
+        symbols.iter().map(String::as_str),
+        DemangleOptions::complete(),
+    )
+    .into_iter()
+    .map(Cow::into_owned)
+    .collect();
 
     assert_eq!(actual, expected);
     // The mix has exactly three occurrences of every symbol; all three
@@ -94,10 +100,13 @@ fn batch_matches_per_symbol_on_corpus_mix() {
         .iter()
         .map(|sym| demangle_one(sym, DemangleOptions::complete()).into_owned())
         .collect();
-    let actual: Vec<String> = demangle_iter(symbols.iter().map(String::as_str), DemangleOptions::complete())
-        .into_iter()
-        .map(Cow::into_owned)
-        .collect();
+    let actual: Vec<String> = demangle_iter(
+        symbols.iter().map(String::as_str),
+        DemangleOptions::complete(),
+    )
+    .into_iter()
+    .map(Cow::into_owned)
+    .collect();
     assert_eq!(actual, expected);
 }
 
@@ -133,11 +142,17 @@ fn batch_unmangled_stay_borrowed() {
 fn batch_accepts_any_into_iterator() {
     // Owned strings, references, and chained iterators all work.
     let owned = ["_Z1hic".to_string(), "libc.so.6".to_string()];
-    let demangled: Vec<String> = demangle_iter(owned.iter().map(String::as_str), DemangleOptions::complete())
-        .into_iter()
-        .map(Cow::into_owned)
-        .collect();
-    assert_eq!(demangled, vec!["h(int, char)".to_string(), "libc.so.6".to_string()]);
+    let demangled: Vec<String> = demangle_iter(
+        owned.iter().map(String::as_str),
+        DemangleOptions::complete(),
+    )
+    .into_iter()
+    .map(Cow::into_owned)
+    .collect();
+    assert_eq!(
+        demangled,
+        vec!["h(int, char)".to_string(), "libc.so.6".to_string()]
+    );
 }
 
 #[test]
@@ -156,10 +171,13 @@ fn batch_fully_unique_matches_per_symbol() {
         .iter()
         .map(|sym| demangle_one(sym, DemangleOptions::complete()).into_owned())
         .collect();
-    let actual: Vec<String> = demangle_iter(symbols.iter().map(String::as_str), DemangleOptions::complete())
-        .into_iter()
-        .map(Cow::into_owned)
-        .collect();
+    let actual: Vec<String> = demangle_iter(
+        symbols.iter().map(String::as_str),
+        DemangleOptions::complete(),
+    )
+    .into_iter()
+    .map(Cow::into_owned)
+    .collect();
     assert_eq!(actual, expected);
     // Every generated symbol is distinct, so nothing may alias.
     let unique_results: std::collections::HashSet<&str> =

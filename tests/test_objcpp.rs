@@ -5,8 +5,8 @@
 #[macro_use]
 mod utils;
 
-use symbolic_common::{Language, Name, NameMangling};
 use multi_demangle::{Demangle, DemangleOptions};
+use symbolic_common::{Language, Name, NameMangling};
 
 use similar_asserts::assert_eq;
 

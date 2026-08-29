@@ -1,0 +1,6 @@
+0000000000400528 T foo::bar()
+0000000000400530 T main
+0000000000400540 T std::io::Read::read_to_end
+                 U {vtable(__cxxabiv1::__class_type_info)}
+0000000000400560 T memcpy@plt
+0000000000601008 D __imp_CreateFileW
