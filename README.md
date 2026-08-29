@@ -47,6 +47,32 @@ assert_eq!(
 assert_eq!(multi_demangle::demangle("_ZN3foo3barEv"), "foo::bar()");
 ```
 
+### Batch demangling
+
+Symbol tables repeat the same symbol many times (dynsym, symtab, version
+tables, and GOT/PLT maps), so the batch API demangles each distinct symbol at
+most once and preserves input order:
+
+```rust
+use multi_demangle::{demangle_iter, DemangleOptions};
+
+let symbols = ["_ZN3foo3barEv", "libc.so.6", "_ZN3foo3barEv"];
+let demangled = demangle_iter(symbols, DemangleOptions::complete());
+assert_eq!(&demangled[0], "foo::bar()");
+assert_eq!(&demangled[1], "libc.so.6");
+assert_eq!(&demangled[2], "foo::bar()");
+```
+
+`demangle_iter` computes the whole batch eagerly and returns a `Vec` (in
+input order). `demangle_one` is the single-symbol pipeline the batch is built
+on (it is what `multi_demangle::demangle` delegates to), exposed so consumers
+can share it with their own batching. Enabling the `parallel` cargo feature
+(off by default) demangles the distinct symbols on the rayon thread pool.
+
+```toml
+multi-demangle = { version = "...", features = ["parallel"] }
+```
+
 ### Symbol hygiene
 
 On top of demangling, the crate provides cheap, prefix-based helpers for the
@@ -153,6 +179,33 @@ operator+(CRelAngle const &, CRelAngle const &)
 `demangle_symbol` returns the original string unchanged when the language cannot
 be detected or demangling fails.
 
+### Batch demangling
+
+`demangle_symbols` demangles a whole batch in one call, releasing the GIL for
+the duration. It accepts any iterable of strings — lists, tuples, generators,
+`map` objects — so hot loops can feed it without materializing first.
+Duplicate symbols are demangled once by default and share a single string
+object across their occurrences; results keep the input order and unmangled
+symbols pass through unchanged:
+
+```
+>>> multi_demangle.demangle_symbols(["_ZN3foo3barEv", "libc.so.6", "_ZN3foo3barEv"])
+['foo::bar()', 'libc.so.6', 'foo::bar()']
+
+>>> # pass unique=False to demangle every position independently
+>>> multi_demangle.demangle_symbols(["_Z1hic", "libc.so.6"], unique=False)
+['h(int, char)', 'libc.so.6']
+
+>>> # options behave like demangle_symbol
+>>> multi_demangle.demangle_symbols(["_ZN3foo3barEv"], options=multi_demangle.DemangleOptions.name_only())
+['foo::bar']
+```
+
+This replaces the per-symbol calls in hot loops (full symbol tables, PE import
+tables, Mach-O binding/stub maps) with a handful of batch calls. Type stubs
+ship with the wheel (`multi_demangle.pyi`), so type checkers see the full API
+including the keyword-only `unique` parameter.
+
 ### Language detection and symbol hygiene
 
 ```
@@ -205,6 +258,14 @@ Run the Python tests against the locally built module:
 ```
 maturin develop --all-features
 pytest python/tests
+```
+
+Run the criterion benchmarks for the batch pipeline (uses the real-symbol
+dumps in `tests/corpus/`; regenerate them with
+`scripts/collect-corpus.sh` when the producing toolchains change):
+
+```
+cargo bench
 ```
 
 The Swift demangler is a minimal subset of the Swift standard library sources

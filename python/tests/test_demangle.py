@@ -188,6 +188,107 @@ def test_demangle_additional_symbols(
     ) == demangled_simple
 
 
+def test_demangle_symbols():
+    """Tests batch demangling: order preservation, dedup, and fallback parity."""
+    symbols = [
+        "_ZN3foo3barEv",
+        "libc.so.6",
+        "_Z1hic",
+        "_ZN3foo3barEv",  # duplicate, interleaved
+        "$s8mangling6curry1yyF",
+        "_Z1hic",  # duplicate
+        "memcpy@plt",
+        "?h@@YAXH@Z",
+    ]
+    result = multi_demangle.demangle_symbols(symbols)
+    assert len(result) == len(symbols)
+    assert result == [multi_demangle.demangle_symbol(s) for s in symbols]
+    assert result[0] == result[3] == "foo::bar()"
+    assert result[1] == "libc.so.6"
+    assert result[2] == result[5] == "h(int, char)"
+    # Accepts any iterable, including generators and map objects, so hot
+    # loops can feed it without materializing a list first.
+    assert multi_demangle.demangle_symbols(tuple(symbols)) == result
+    assert multi_demangle.demangle_symbols(s for s in symbols) == result
+    assert multi_demangle.demangle_symbols(map(str, symbols)) == result
+
+
+def test_demangle_symbols_shares_duplicate_strings():
+    """Duplicate positions share one string object, keeping the dedup win
+    all the way to the caller."""
+    symbols = ["_ZN3foo3barEv", "_Z1hic", "_ZN3foo3barEv", "_Z1hic", "_ZN3foo3barEv"]
+    result = multi_demangle.demangle_symbols(symbols)
+    assert result[0] is result[2] is result[4]
+    assert result[1] is result[3]
+    # Distinct symbols still get distinct objects.
+    assert result[0] is not result[1]
+    # With unique=False every position is demangled independently.
+    independent = multi_demangle.demangle_symbols(symbols, unique=False)
+    assert independent == result
+    assert independent[0] is not independent[2]
+
+
+def test_demangle_symbols_unique_false():
+    """Tests that unique=False yields the same results without deduplication."""
+    symbols = ["_Z1hic", "libc.so.6", "_Z1hic", "_Z1hic"]
+    assert multi_demangle.demangle_symbols(symbols, unique=False) == [
+        "h(int, char)",
+        "libc.so.6",
+        "h(int, char)",
+        "h(int, char)",
+    ]
+    assert multi_demangle.demangle_symbols(symbols) == multi_demangle.demangle_symbols(
+        symbols, unique=False
+    )
+
+
+def test_demangle_symbols_empty():
+    """Tests the empty-input edge case."""
+    assert multi_demangle.demangle_symbols([]) == []
+
+
+def test_demangle_symbols_rejects_non_sequences():
+    """Tests that a bare string is rejected instead of demangled per character."""
+    with pytest.raises(TypeError):
+        multi_demangle.demangle_symbols("_Z1hic")
+    with pytest.raises(TypeError):
+        multi_demangle.demangle_symbols([1, 2, 3])
+
+
+def test_demangle_symbols_options():
+    """Tests that DemangleOptions are honored for the whole batch."""
+    symbols = ["_ZN3foo3barEv", "_Z1hic"]
+    assert multi_demangle.demangle_symbols(
+        symbols, options=multi_demangle.DemangleOptions.name_only()
+    ) == ["foo::bar", "h"]
+    assert multi_demangle.demangle_symbols(
+        symbols, options=multi_demangle.DemangleOptions(return_type=False, parameters=True)
+    ) == ["foo::bar()", "h(int, char)"]
+
+
+def test_demangle_symbols_normalize_option():
+    """Tests that the normalize fallback policy applies to the batch."""
+    symbols = ["__imp_?h@@YAXH@Z", "std::io::Read::read_to_end::hb85a0f6802e14499"]
+    assert multi_demangle.demangle_symbols(symbols) == [
+        "__imp_?h@@YAXH@Z",
+        "std::io::Read::read_to_end::hb85a0f6802e14499",
+    ]
+    options = multi_demangle.DemangleOptions(normalize=True)
+    assert multi_demangle.demangle_symbols(symbols, options=options) == [
+        "__declspec(dllimport) ?h@@YAXH@Z",
+        "std::io::Read::read_to_end",
+    ]
+
+
+def test_demangle_symbols_duplicates_large():
+    """Tests a duplicate-heavy batch the size of a small symbol table."""
+    uniques = ["_Z1hic", "?h@@YAXH@Z", "libc.so.6", "main"]
+    symbols = [uniques[i % len(uniques)] for i in range(10_000)]
+    result = multi_demangle.demangle_symbols(symbols)
+    assert len(result) == 10_000
+    assert all(result[i] == multi_demangle.demangle_symbol(symbols[i]) for i in range(0, 10_000, 97))
+
+
 def test_detect_language():
     """Tests language detection for raw symbols."""
     assert multi_demangle.detect_language("_Z1hic") == "cpp"

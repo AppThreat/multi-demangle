@@ -12,6 +12,9 @@ homepage = "https://github.com/AppThreat/multi-demangle"
 repository = "https://github.com/AppThreat/multi-demangle"
 keywords = ["demangler", "binary"]
 
+[tool.maturin]
+python-source = "python"
+
 authors = [
     { name = "Team AppThreat", email = "cloud@appthreat.com" }
 ]

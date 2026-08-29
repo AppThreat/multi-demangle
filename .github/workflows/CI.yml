@@ -39,6 +39,10 @@ jobs:
             export CC=clang
             export CXX=clang++
           fi
+          # `--all-features` implies `extension-module`, which only links with
+          # the dynamic-lookup RUSTFLAGS above; `parallel` is the other real
+          # consumer configuration (batch demangling on the rayon pool).
+          cargo test --features parallel
           cargo test --all-features
         shell: bash
 
