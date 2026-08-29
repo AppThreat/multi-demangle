@@ -30,6 +30,9 @@ jobs:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           persist-credentials: false
+      - name: Check formatting
+        run: cargo fmt --check
+        shell: bash
       - name: Run cargo test
         run: |
           if [ "${{ runner.os }}" = "macOS" ]; then
@@ -52,11 +55,10 @@ jobs:
           if [ -x "$BIN.exe" ]; then BIN="$BIN.exe"; fi
           "$BIN" --version
           "$BIN" _ZN3foo3barEv
-          "$BIN" < tests/fixtures/nm_dump.txt > nm_actual.txt
-          diff -u tests/fixtures/nm_demangled.txt nm_actual.txt
-          "$BIN" --normalize < tests/fixtures/nm_hygiene_dump.txt > nm_hygiene_actual.txt
-          diff -u tests/fixtures/nm_hygiene_demangled.txt nm_hygiene_actual.txt
-          rm -f nm_actual.txt nm_hygiene_actual.txt
+          "$BIN" < tests/fixtures/nm_dump.txt > "$RUNNER_TEMP/nm_actual.txt"
+          diff -u tests/fixtures/nm_demangled.txt "$RUNNER_TEMP/nm_actual.txt"
+          "$BIN" --normalize < tests/fixtures/nm_hygiene_dump.txt > "$RUNNER_TEMP/nm_hygiene_actual.txt"
+          diff -u tests/fixtures/nm_hygiene_demangled.txt "$RUNNER_TEMP/nm_hygiene_actual.txt"
         shell: bash
 
   python-tests:

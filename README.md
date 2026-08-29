@@ -47,6 +47,16 @@ assert_eq!(
 assert_eq!(multi_demangle::demangle("_ZN3foo3barEv"), "foo::bar()");
 ```
 
+The `cli` cargo feature (on by default) pulls in the argument parser for the
+binary. Library-only consumers can drop it by re-enabling the backends
+explicitly:
+
+```toml
+multi-demangle = { version = "...", default-features = false, features = [
+  "cpp", "gnuv2", "codewarrior", "msvc", "rust", "scala-native", "swift",
+] }
+```
+
 ### Batch demangling
 
 Symbol tables repeat the same symbol many times (dynsym, symtab, version
@@ -268,7 +278,7 @@ Options:
 | `-n, --name-only` | names only, no parameters or return types |
 | `--no-parameters` / `--no-return-type` | individual output toggles |
 | `-l, --language <LANG>` | force a backend instead of auto-detecting (`cpp`, `rust`, `swift`, `objc`, `objcpp`, `scala-native`) |
-| `--normalize` | apply the symbol hygiene passes (`__imp_`, `@plt`, ELF versions, Rust hash suffixes and `$`-escapes, pseudo-symbols) to symbols that cannot be demangled |
+| `--normalize` | apply the symbol hygiene passes (`__imp_`, `@plt`, ELF versions, Rust hash suffixes and `$`-escapes, `.llvm.` clone suffixes, pseudo-symbols) to symbols that cannot be demangled, then demangle the cleaned symbol when it succeeds |
 | `-s, --structured` | print one JSON record per symbol with its status, language, and linker decorations |
 | `--list-languages` | print the supported languages and the backends enabled in this build |
 | `--color=auto/always/never` | colorize successfully demangled output (auto is the default) |
@@ -283,9 +293,23 @@ $ multi-demangle -s "_Z1hic@GLIBC_2.2.5"
 ```
 
 In filter mode with `--structured`, only tokens that look like symbols
-produce records; plain addresses and words are skipped. Successful demangled
-output is never normalized, so `--normalize` cleans up exactly the symbols
-the demanglers rejected.
+produce records; plain addresses and words are skipped.
+
+`--normalize` never touches directly successful demangled output; the passes
+run on the symbols the demanglers rejected, and the cleaned symbol is then
+demangled once more — a version-suffixed `_Z1hic@GLIBC_2.2.5` comes out as
+`h(int, char)`. Because `.llvm.` clone suffixes and legacy Rust `$`-escapes
+appear on names that do not classify as mangled, filter mode processes every
+token while `--normalize` is active:
+
+```
+$ multi-demangle --normalize bar.llvm.12345
+bar
+$ multi-demangle "_Z1hic@GLIBC_2.2.5"
+_Z1hic@GLIBC_2.2.5
+$ multi-demangle --normalize "_Z1hic@GLIBC_2.2.5"
+h(int, char)
+```
 
 ## Development
 

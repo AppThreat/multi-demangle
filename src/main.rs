@@ -17,6 +17,7 @@
 use std::borrow::Cow;
 use std::io::{self, BufRead, BufWriter, IsTerminal, Write};
 use std::process::ExitCode;
+use std::sync::LazyLock;
 
 use clap::{CommandFactory, FromArgMatches, Parser, ValueEnum};
 use multi_demangle::{
@@ -56,7 +57,9 @@ struct Cli {
 
     /// Apply the symbol hygiene passes (Rust hash suffix and legacy escape
     /// cleanup, `__imp_` import pointers, `@plt` call stubs, ELF versions,
-    /// pseudo-symbols) to symbols that cannot be demangled.
+    /// pseudo-symbols) to symbols that cannot be demangled, and demangle the
+    /// cleaned symbol when it then succeeds. In filter mode every token is
+    /// processed, not only the ones that look mangled.
     #[arg(long)]
     normalize: bool,
 
@@ -126,23 +129,43 @@ struct Pipeline {
 }
 
 impl Pipeline {
-    /// Demangles one token, falling back to the original string — and, with
-    /// `--normalize`, to the hygiene passes — when demangling does not
-    /// succeed. Successful demangled output is never normalized, mirroring
-    /// the library's `try_demangle_normalized`.
+    /// Demangles one token. A demangling that changes the input always wins;
+    /// everything else (failed demangling, and identity results — the Scala
+    /// Native fallback accepts already-readable strings unchanged) goes to
+    /// the normalize fallback.
     fn run<'a>(&self, sym: &'a str) -> Cow<'a, str> {
-        // The `Demangle::try_demangle` methods borrow the `Name`, so the
-        // owned `demangle` plus an explicit fallback is used here.
-        let demangled = match self.language {
+        match self.demangle_owned(sym) {
+            Some(demangled) if demangled != sym => Cow::Owned(demangled),
+            _ => self.normalize_fallback(sym),
+        }
+    }
+
+    /// The `--normalize` fallback for symbols that were not really
+    /// demangled: apply the hygiene passes, then attempt demangling the
+    /// cleaned symbol once more — a version-suffixed mangled symbol such as
+    /// `_Z1hic@GLIBC_2.2.5` only demangles after its decoration is stripped.
+    /// Without a normalizer the token passes through unchanged.
+    fn normalize_fallback<'a>(&self, sym: &'a str) -> Cow<'a, str> {
+        let Some(normalizer) = &self.normalizer else {
+            return Cow::Borrowed(sym);
+        };
+        let cleaned = normalizer.normalize(sym);
+        if cleaned == sym {
+            return cleaned;
+        }
+        match self.demangle_owned(&cleaned) {
+            Some(demangled) if demangled != cleaned => Cow::Owned(demangled),
+            _ => cleaned,
+        }
+    }
+
+    /// Demangles with auto-detection, or with the `--language` backend
+    /// forced. The `Demangle::try_demangle` methods borrow the `Name`, so
+    /// the owned `demangle` is used here.
+    fn demangle_owned(&self, sym: &str) -> Option<String> {
+        match self.language {
             Some(language) => Name::new(sym, NameMangling::Mangled, language).demangle(self.opts),
             None => Name::from(sym).demangle(self.opts),
-        };
-        match demangled {
-            Some(demangled) => Cow::Owned(demangled),
-            None => match &self.normalizer {
-                Some(normalizer) => normalizer.normalize(sym),
-                None => Cow::Borrowed(sym),
-            },
         }
     }
 }
@@ -200,7 +223,13 @@ fn run_filter(renderer: &Renderer, structured: bool) -> io::Result<()> {
         if structured {
             for token in line.split_whitespace() {
                 let status = classify_symbol(token);
-                if matches!(status, SymbolStatus::Unmangled) {
+                // Without --normalize only tokens that look like symbols
+                // produce records; with it every token is processed, since
+                // the hygiene passes also clean names that classify as
+                // unmangled (`.llvm.` clones, legacy Rust `$`-escapes).
+                if renderer.pipeline.normalizer.is_none()
+                    && matches!(status, SymbolStatus::Unmangled)
+                {
                     continue;
                 }
                 writeln!(out, "{}", renderer.record(token, &status))?;
@@ -211,7 +240,7 @@ fn run_filter(renderer: &Renderer, structured: bool) -> io::Result<()> {
             // before it, so runs of whitespace survive the round-trip.
             for chunk in line.split_inclusive(char::is_whitespace) {
                 let (token, whitespace) = chunk.split_at(chunk.trim_end().len());
-                if is_symbol_candidate(token) {
+                if renderer.pipeline.normalizer.is_some() || is_symbol_candidate(token) {
                     rendered.push_str(&renderer.render(token));
                 } else {
                     rendered.push_str(token);
@@ -378,14 +407,15 @@ fn enabled_backends() -> Vec<&'static str> {
 }
 
 /// The text printed for `--version`: the crate version plus the enabled
-/// backends. Clap prefixes the command name itself.
-fn version_text() -> String {
+/// backends. Clap prefixes the command name itself. Held in a static so it
+/// can be handed to `Command::version` as a `&'static str`.
+static VERSION_TEXT: LazyLock<String> = LazyLock::new(|| {
     format!(
         "{}\nenabled backends: {}",
         env!("CARGO_PKG_VERSION"),
         enabled_backends().join(", ")
     )
-}
+});
 
 /// The ` [enabled]` / ` [disabled: ...]` suffix for a feature-gated language.
 fn feature_note(enabled: bool, feature: &str) -> String {
@@ -467,10 +497,9 @@ fn demangle_options(cli: &Cli) -> DemangleOptions {
 
 fn main() -> ExitCode {
     let mut cmd = Cli::command();
-    // `Command::version` requires a `&'static str`; the text is built once
-    // and intentionally lives for the rest of the process.
-    let version: &'static str = Box::leak(version_text().into_boxed_str());
-    cmd = cmd.version(version);
+    // `Command::version` requires a `&'static str` (clap's `Str` does not
+    // take owned strings); a process-lifetime static provides one.
+    cmd = cmd.version(VERSION_TEXT.as_str());
     let matches = cmd.get_matches();
     let cli = Cli::from_arg_matches(&matches).expect("matches come from the same command");
 
@@ -519,6 +548,9 @@ mod tests {
         };
         assert_eq!(pipeline.run("_ZN3foo3barEv"), "foo::bar()");
         assert_eq!(pipeline.run("libc.so.6"), "libc.so.6");
+        // Without --normalize, names the hygiene passes could clean pass
+        // through unchanged.
+        assert_eq!(pipeline.run("bar.llvm.12345"), "bar.llvm.12345");
     }
 
     #[test]
@@ -530,7 +562,17 @@ mod tests {
         };
         assert_eq!(pipeline.run("memcpy@plt"), "memcpy");
         assert_eq!(pipeline.run("__imp_CreateFileW"), "CreateFileW");
-        // Successful demangling is never normalized.
+        // Names that classify as unmangled are cleaned too.
+        assert_eq!(pipeline.run("bar.llvm.12345"), "bar");
+        assert_eq!(pipeline.run("foo$LT$"), "foo<");
+        assert_eq!(
+            pipeline.run("std::io::Read::read_to_end::hb85a0f6802e14499"),
+            "std::io::Read::read_to_end"
+        );
+        // The cleaned symbol is demangled once more.
+        assert_eq!(pipeline.run("_Z1hic@GLIBC_2.2.5"), "h(int, char)");
+        assert_eq!(pipeline.run("__imp__ZN3foo3barEv"), "foo::bar()");
+        // Directly successful demangling is never normalized.
         assert_eq!(pipeline.run("_ZN3foo3barEv"), "foo::bar()");
     }
 

@@ -119,13 +119,52 @@ fn empty_stdin() {
 
 #[test]
 fn normalize_argument_mode() {
-    let out = run(&["--normalize", "memcpy@plt", "__imp_CreateFileW"], None);
+    let out = run(
+        &[
+            "--normalize",
+            "memcpy@plt",
+            "__imp_CreateFileW",
+            "_Z1hic@GLIBC_2.2.5",
+            "bar.llvm.12345",
+        ],
+        None,
+    );
     assert_eq!(out.status, 0);
-    assert_eq!(out.stdout, "memcpy\nCreateFileW\n");
+    // The version-stripped C++ symbol is demangled after cleanup.
+    assert_eq!(out.stdout, "memcpy\nCreateFileW\nh(int, char)\nbar\n");
 
     // Without --normalize the decorated symbols pass through.
-    let out = run(&["memcpy@plt"], None);
-    assert_eq!(out.stdout, "memcpy@plt\n");
+    let out = run(&["memcpy@plt", "_Z1hic@GLIBC_2.2.5"], None);
+    assert_eq!(out.stdout, "memcpy@plt\n_Z1hic@GLIBC_2.2.5\n");
+}
+
+#[test]
+fn normalize_filter_mode_cleans_unmangled_tokens() {
+    // `.llvm.` clone suffixes and legacy Rust `$`-escapes classify as
+    // unmangled, so the candidate gate must not hide them from --normalize.
+    let out = run(&["--normalize"], Some("bar.llvm.12345 foo$LT$\n"));
+    assert_eq!(out.status, 0);
+    assert_eq!(out.stdout, "bar foo<\n");
+
+    // Without --normalize they pass through untouched.
+    let out = run(&[], Some("bar.llvm.12345 foo$LT$\n"));
+    assert_eq!(out.stdout, "bar.llvm.12345 foo$LT$\n");
+}
+
+#[test]
+fn normalize_structured_filter_mode_records_cleaned_tokens() {
+    let out = run(&["-s", "--normalize"], Some("bar.llvm.12345\n"));
+    assert_eq!(out.status, 0);
+    assert!(
+        out.stdout.contains(r#""mangled":"bar.llvm.12345""#),
+        "{}",
+        out.stdout
+    );
+    assert!(
+        out.stdout.contains(r#""demangled":"bar""#),
+        "{}",
+        out.stdout
+    );
 }
 
 #[test]
