@@ -1,0 +1,6 @@
+0000000000400528 T _ZN3foo3barEv
+0000000000400530 T main
+0000000000400540 T _ZN3std2io4Read11read_to_end17hb85a0f6802e14499E
+                 U _ZTVN10__cxxabiv117__class_type_infoE
+0000000000400560 T memcpy@plt
+0000000000601008 D __imp_CreateFileW

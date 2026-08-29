@@ -45,6 +45,19 @@ jobs:
           cargo test --features parallel
           cargo test --all-features
         shell: bash
+      - name: CLI filter smoke test
+        run: |
+          cargo build --bin multi-demangle
+          BIN=./target/debug/multi-demangle
+          if [ -x "$BIN.exe" ]; then BIN="$BIN.exe"; fi
+          "$BIN" --version
+          "$BIN" _ZN3foo3barEv
+          "$BIN" < tests/fixtures/nm_dump.txt > nm_actual.txt
+          diff -u tests/fixtures/nm_demangled.txt nm_actual.txt
+          "$BIN" --normalize < tests/fixtures/nm_hygiene_dump.txt > nm_hygiene_actual.txt
+          diff -u tests/fixtures/nm_hygiene_demangled.txt nm_hygiene_actual.txt
+          rm -f nm_actual.txt nm_hygiene_actual.txt
+        shell: bash
 
   python-tests:
       name: Python Tests

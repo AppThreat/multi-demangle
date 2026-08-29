@@ -238,6 +238,55 @@ passes to the fallback when demangling does not succeed, and
 `Normalizer.matching()` provides the pass set for cross-symbol matching
 (`memcpy@plt` → `memcpy`, `__imp_CreateFileW` → `CreateFileW`).
 
+## CLI
+
+A `c++filt`-style command line tool ships with the crate. Install it with a
+Rust toolchain (or use `cargo run --` from a checkout):
+
+```
+cargo install multi-demangle
+```
+
+With arguments, each argument is demangled to one output line. Without
+arguments, the tool runs in **filter mode**: lines are read from stdin, every
+whitespace-separated token that looks mangled is demangled, and everything
+else passes through unchanged — so it composes with `nm` / `objdump`
+pipelines:
+
+```
+$ multi-demangle _ZN3foo3barEv
+foo::bar()
+
+$ nm libfoo.so | multi-demangle
+$ nm libfoo.so | sort | uniq -c | multi-demangle -n --normalize
+```
+
+Options:
+
+| Flag | Effect |
+| ---- | ------ |
+| `-n, --name-only` | names only, no parameters or return types |
+| `--no-parameters` / `--no-return-type` | individual output toggles |
+| `-l, --language <LANG>` | force a backend instead of auto-detecting (`cpp`, `rust`, `swift`, `objc`, `objcpp`, `scala-native`) |
+| `--normalize` | apply the symbol hygiene passes (`__imp_`, `@plt`, ELF versions, Rust hash suffixes and `$`-escapes, pseudo-symbols) to symbols that cannot be demangled |
+| `-s, --structured` | print one JSON record per symbol with its status, language, and linker decorations |
+| `--list-languages` | print the supported languages and the backends enabled in this build |
+| `--color=auto/always/never` | colorize successfully demangled output (auto is the default) |
+
+`multi-demangle --version` prints the crate version together with the enabled
+backends. Exit code is `0` on success — including when nothing looked mangled
+— and `1` on I/O errors.
+
+```
+$ multi-demangle -s "_Z1hic@GLIBC_2.2.5"
+{"mangled":"_Z1hic@GLIBC_2.2.5","demangled":"_Z1hic@GLIBC_2.2.5","status":"mangled","language":"cpp","decorations":[{"kind":"version","value":"GLIBC_2.2.5"}]}
+```
+
+In filter mode with `--structured`, only tokens that look like symbols
+produce records; plain addresses and words are skipped. Successful demangled
+output is never normalized, so `--normalize` cleans up exactly the symbols
+the demanglers rejected.
+
 ## Development
 
 Use `uv` package manager.
