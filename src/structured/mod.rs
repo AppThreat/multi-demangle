@@ -536,6 +536,12 @@ fn split_component_args(component: &str) -> (String, Option<Vec<String>>) {
     let mut base = String::with_capacity(component.len());
     let mut args: Option<Vec<String>> = None;
     let mut rest = component;
+    // An operator prefix (`operator<`, `operator<<`, ...) carries angle
+    // characters that are name text, not a generic group.
+    if let Some(token_len) = crate::operator_angle_token_len(component, 0) {
+        base.push_str(&component[..token_len]);
+        rest = &component[token_len..];
+    }
     while let Some(open) = rest.find('<') {
         // Find the `>` matching the one at `open`, tracking nesting; an
         // unbalanced group is not a generic argument list.

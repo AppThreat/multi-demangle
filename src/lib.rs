@@ -422,26 +422,35 @@ fn cpp_like_qualifier_end(demangled: &str, mut idx: usize) -> usize {
 /// Scans for a `(` at angle-bracket depth zero — a `(` inside `<...>`
 /// belongs to a template argument's type (`function_ref<void ()>`), not to
 /// the signature — that is preceded by something that looks like a function
-/// name (not a bare type keyword, not empty). On success returns the
-/// function name, the byte index of the opening `(`, and the byte index
-/// just past the closing `)` including any trailing qualifiers.
+/// name (not a bare type keyword, not empty). Operator tokens
+/// (`operator<<`, `operator<`, `operator->`, ...) are skipped as
+/// depth-neutral units so their unmatched `<`/`>` cannot poison the depth
+/// count. On success returns the function name, the byte index of the
+/// opening `(`, and the byte index just past the closing `)` including any
+/// trailing qualifiers.
 pub(crate) fn analyze_cpp_like_signature(demangled: &str) -> Option<(String, usize, usize)> {
     let mut angle_depth = 0usize;
-    for (idx, ch) in demangled.char_indices() {
-        match ch {
+    let mut idx = 0usize;
+    while idx < demangled.len() {
+        if let Some(token_len) = operator_angle_token_len(demangled, idx) {
+            // Part of an operator name, not a bracket: depth-neutral.
+            idx += token_len;
+            continue;
+        }
+        match demangled[idx..].chars().next()? {
             '<' => angle_depth = angle_depth.saturating_add(1),
             '>' => angle_depth = angle_depth.saturating_sub(1),
             '(' if angle_depth == 0 => {
                 // The call operator renders its own empty pair as part of
                 // the name: `operator()(args)` — the parameter list is the
                 // second pair.
-                let idx = if demangled[idx..].starts_with("()(") {
+                let params_idx = if demangled[idx..].starts_with("()(") {
                     idx + 2
                 } else {
                     idx
                 };
 
-                let prefix = demangled[..idx].trim_end();
+                let prefix = demangled[..params_idx].trim_end();
                 let candidate = trim_cpp_like_name_prefix(prefix);
                 // Skip candidate "names" that are actually return types (e.g. "void") or
                 // artifacts of operator/template syntax without a proper identifier.
@@ -449,17 +458,42 @@ pub(crate) fn analyze_cpp_like_signature(demangled: &str) -> Option<(String, usi
                     || is_cpp_like_type_keyword(&candidate)
                     || !prefix.ends_with(&candidate)
                 {
+                    idx += 1;
                     continue;
                 }
 
-                let params_end = matching_paren_end(demangled, idx)?;
+                let params_end = matching_paren_end(demangled, params_idx)?;
                 let signature_end = cpp_like_qualifier_end(demangled, params_end);
-                return Some((candidate, idx, signature_end));
+                return Some((candidate, params_idx, signature_end));
             }
             _ => {}
         }
+        idx += demangled[idx..].chars().next()?.len_utf8();
     }
 
+    None
+}
+
+/// Whether `idx` sits on an operator name whose token contains angle
+/// characters (`operator<<`, `operator<`, `operator<=`, `operator->`, ...);
+/// returns the length of the whole `operator...` span. Such tokens must not
+/// feed the angle-depth count: `operator<<` carries two unmatched `<`.
+pub(crate) fn operator_angle_token_len(text: &str, idx: usize) -> Option<usize> {
+    let rest = text.get(idx..)?;
+    if !rest.starts_with("operator") {
+        return None;
+    }
+    // Word boundary: `my_operator<` is an identifier, not the operator.
+    if let Some(prev) = text[..idx].chars().next_back() {
+        if prev.is_alphanumeric() || prev == '_' {
+            return None;
+        }
+    }
+    for token in ["<<", ">>", "<=", ">=", "->", "<", ">"] {
+        if rest["operator".len()..].starts_with(token) {
+            return Some("operator".len() + token.len());
+        }
+    }
     None
 }
 
@@ -475,17 +509,27 @@ fn trim_cpp_like_name_prefix(prefix: &str) -> String {
     }
 
     let mut depth = 0usize;
-    let mut last_top_level_space = None;
+    let mut top_level_spaces = Vec::new();
     for (idx, ch) in prefix.char_indices() {
         match ch {
             '<' => depth = depth.saturating_add(1),
             '>' => depth = depth.saturating_sub(1),
-            ' ' if depth == 0 => last_top_level_space = Some(idx),
+            ' ' if depth == 0 => top_level_spaces.push(idx),
             _ => {}
         }
     }
 
-    match last_top_level_space {
+    // The last top-level space usually separates the return type from the
+    // name — but a space directly before template arguments continues an
+    // operator name (`operator< <int>`), so step back one space.
+    let mut candidate_space = top_level_spaces.pop();
+    if let Some(pos) = candidate_space {
+        if prefix[pos + 1..].starts_with('<') {
+            candidate_space = top_level_spaces.pop();
+        }
+    }
+
+    match candidate_space {
         Some(pos) => prefix[pos + 1..].to_string(),
         None => prefix.to_string(),
     }
@@ -692,7 +736,10 @@ pub(crate) fn try_dump_swift(sym: &str) -> Option<String> {
             buffer.reserve(64 * 1024);
         }
         let ok = unsafe {
-            multi_demangle_swift_dump(cstr.as_ptr(), buffer.as_mut_ptr(), buffer.capacity())
+            // Write into the vec's unused allocation; `spare_capacity_mut`
+            // is the sanctioned view of it (len stays 0, C writes the NUL).
+            let spare = buffer.spare_capacity_mut();
+            multi_demangle_swift_dump(cstr.as_ptr(), spare.as_mut_ptr().cast(), spare.len())
         };
         if ok == 0 {
             return None;

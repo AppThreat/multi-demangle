@@ -168,6 +168,29 @@ fn cpp_template_arg_with_function_type() {
 }
 
 #[test]
+fn cpp_shift_and_comparison_operators() {
+    // Regression guard: the angle-depth scanner must treat operator tokens
+    // (`<<`, `<`) as name text, not brackets — `operator<<` carries two
+    // unmatched `<` that would otherwise poison the depth count.
+    let shift = structured("_ZN4llvm5APIntlsEi");
+    assert_eq!(shift.display, "llvm::APInt::operator<<(int)");
+    assert_eq!(shift.namespace, ["llvm", "APInt"]);
+    assert_eq!(shift.name, "operator<<");
+    assert_eq!(shift.parameters, Some(vec!["int".to_string()]));
+    assert_eq!(shift.kind, DemangledKind::Method);
+
+    // A template comparison operator: the operator's own `<` and the
+    // template group are distinct, and the leaf stays bare.
+    let template_lt = structured("_ZN3fooltIiEEbT_");
+    assert_eq!(template_lt.display, "bool foo::operator< <int>(int)");
+    assert_eq!(template_lt.namespace, ["foo"]);
+    assert_eq!(template_lt.name, "operator<");
+    assert_eq!(template_lt.parameters, Some(vec!["int".to_string()]));
+    assert_eq!(template_lt.return_type.as_deref(), Some("bool"));
+    assert_eq!(template_lt.template_args, Some(vec!["int".to_string()]));
+}
+
+#[test]
 fn cpp_free_operators_are_not_methods() {
     // A free operator in a namespace: the owner is not a type, so the
     // owner-shape predicate must not fire on the leaf's "operator" prefix.
