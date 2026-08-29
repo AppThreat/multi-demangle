@@ -37,6 +37,9 @@ struct Cli {
     /// Mangled symbols to demangle, one result per line. When omitted,
     /// filter mode reads whitespace-separated tokens from stdin and passes
     /// everything that does not look mangled through unchanged.
+    // Hyphen-prefixed symbols such as ObjC selectors (`-[Foo bar:]`) are
+    // values, not flags.
+    #[arg(allow_hyphen_values = true)]
     symbols: Vec<String>,
 
     /// Print names only, without parameters or return types.
@@ -64,8 +67,9 @@ struct Cli {
     normalize: bool,
 
     /// Print one JSON record per symbol with its demangled form, status,
-    /// language, and linker decorations. In filter mode only tokens that
-    /// look like symbols produce records.
+    /// language, and linker decorations. In filter mode, records are
+    /// produced only for tokens that look like symbols or that the pipeline
+    /// changed.
     #[arg(short = 's', long)]
     structured: bool,
 
@@ -223,16 +227,15 @@ fn run_filter(renderer: &Renderer, structured: bool) -> io::Result<()> {
         if structured {
             for token in line.split_whitespace() {
                 let status = classify_symbol(token);
-                // Without --normalize only tokens that look like symbols
-                // produce records; with it every token is processed, since
-                // the hygiene passes also clean names that classify as
-                // unmangled (`.llvm.` clones, legacy Rust `$`-escapes).
-                if renderer.pipeline.normalizer.is_none()
-                    && matches!(status, SymbolStatus::Unmangled)
-                {
+                let result = renderer.pipeline.run(token);
+                // A token that is not a symbol and that the pipeline left
+                // unchanged — a plain address, an nm type letter — stays out
+                // of the output; a token the passes cleaned (or demangled)
+                // is reported even though it classifies as unmangled.
+                if matches!(status, SymbolStatus::Unmangled) && result == token {
                     continue;
                 }
-                writeln!(out, "{}", renderer.record(token, &status))?;
+                writeln!(out, "{}", structured_record(token, &result, &status))?;
             }
         } else {
             let mut rendered = String::with_capacity(line.len() + 32);

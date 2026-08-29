@@ -271,6 +271,14 @@ $ nm libfoo.so | multi-demangle
 $ nm libfoo.so | sort | uniq -c | multi-demangle -n --normalize
 ```
 
+Hyphen-prefixed symbols such as ObjC selectors are accepted as values, so the
+obvious invocation just works (and `--` works too):
+
+```
+$ multi-demangle '-[Foo bar:blub:]'
+-[Foo bar:blub:]
+```
+
 Options:
 
 | Flag | Effect |
@@ -292,8 +300,10 @@ $ multi-demangle -s "_Z1hic@GLIBC_2.2.5"
 {"mangled":"_Z1hic@GLIBC_2.2.5","demangled":"_Z1hic@GLIBC_2.2.5","status":"mangled","language":"cpp","decorations":[{"kind":"version","value":"GLIBC_2.2.5"}]}
 ```
 
-In filter mode with `--structured`, only tokens that look like symbols
-produce records; plain addresses and words are skipped.
+In filter mode with `--structured`, records are emitted only for tokens that
+look like symbols or that the pipeline changed — under `--normalize`, a
+cleaned token such as `bar.llvm.12345` is reported — while plain addresses,
+type letters, and words are skipped.
 
 `--normalize` never touches directly successful demangled output; the passes
 run on the symbols the demanglers rejected, and the cleaned symbol is then

@@ -153,8 +153,11 @@ fn normalize_filter_mode_cleans_unmangled_tokens() {
 
 #[test]
 fn normalize_structured_filter_mode_records_cleaned_tokens() {
-    let out = run(&["-s", "--normalize"], Some("bar.llvm.12345\n"));
+    // The address and the nm type letter are unmangled and unchanged, so
+    // they stay out of the output; the cleaned token is reported.
+    let out = run(&["-s", "--normalize"], Some("0000 T bar.llvm.12345\n"));
     assert_eq!(out.status, 0);
+    assert_eq!(out.stdout.lines().count(), 1, "{}", out.stdout);
     assert!(
         out.stdout.contains(r#""mangled":"bar.llvm.12345""#),
         "{}",
@@ -162,6 +165,29 @@ fn normalize_structured_filter_mode_records_cleaned_tokens() {
     );
     assert!(
         out.stdout.contains(r#""demangled":"bar""#),
+        "{}",
+        out.stdout
+    );
+}
+
+#[test]
+fn objc_selector_argument() {
+    // Hyphen-prefixed selectors are accepted as values, not flags.
+    let out = run(&["-[Foo bar:blub:]"], None);
+    assert_eq!(out.status, 0);
+    // Selectors are already readable and pass through unchanged.
+    assert_eq!(out.stdout, "-[Foo bar:blub:]\n");
+
+    // Structured mode classifies them as mangled ObjC.
+    let out = run(&["-s", "-[Foo bar:blub:]"], None);
+    assert_eq!(out.status, 0);
+    assert!(
+        out.stdout.contains(r#""status":"mangled""#),
+        "{}",
+        out.stdout
+    );
+    assert!(
+        out.stdout.contains(r#""language":"objc""#),
         "{}",
         out.stdout
     );
