@@ -38,6 +38,12 @@
 //! For symbol tables and other bulk inputs, [`demangle_one`] and
 //! [`demangle_iter`] expose the per-symbol and deduplicating batch pipelines;
 //! the Python module mirrors them as `demangle_symbols`.
+//!
+//! [`Demangle::demangle_structured`] goes one step further than the string
+//! APIs and extracts typed structure from the rendering — namespace path,
+//! leaf name, entity [`kind`](DemangledKind), generics, parameters, return
+//! type, and compiler hashes — as a [`DemangledInfo`]; the Python module
+//! mirrors it as `demangle_symbol_structured`.
 
 #![warn(missing_docs)]
 
@@ -51,11 +57,13 @@ use std::os::raw::{c_char, c_int};
 use symbolic_common::{Language, Name, NameMangling};
 
 mod hygiene;
+mod structured;
 
 pub use hygiene::{
     classify_symbol, detect_language, is_scala_native_symbol, language_name, looks_mangled,
     normalize_symbol, Decoration, Normalizer, SymbolStatus,
 };
+pub use structured::{DemangledInfo, DemangledKind};
 
 // Feature flags forwarded over FFI to the vendored Swift demangler in `src/swiftdemangle.cpp`.
 // The values must stay in sync with the `SYMBOLIC_SWIFT_FEATURE_*` defines in that file.
@@ -145,7 +153,7 @@ impl DemangleOptions {
 
 /// Detects Objective-C method selectors, which look like `-[Class method]`
 /// (instance methods) or `+[Class method]` (class methods).
-fn is_maybe_objc(ident: &str) -> bool {
+pub(crate) fn is_maybe_objc(ident: &str) -> bool {
     (ident.starts_with("-[") || ident.starts_with("+[")) && ident.ends_with(']')
 }
 
@@ -166,7 +174,7 @@ fn is_maybe_msvc(ident: &str) -> bool {
 
 /// An MD5 mangled name consists of the prefix "??@", 32 hex digits,
 /// and the suffix "@".
-fn is_maybe_md5(ident: &str) -> bool {
+pub(crate) fn is_maybe_md5(ident: &str) -> bool {
     if ident.len() != 36 {
         return false;
     }
@@ -271,7 +279,7 @@ fn try_demangle_scala_native(_ident: &str, _opts: DemangleOptions) -> Option<Str
 
 /// Removes a suffix consisting of $ followed by 32 hex digits, if there is one,
 /// otherwise returns its input.
-fn strip_hash_suffix(ident: &str) -> &str {
+pub(crate) fn strip_hash_suffix(ident: &str) -> &str {
     let len = ident.len();
     if len >= 33 {
         let mut char_iter = ident.char_indices();
@@ -338,7 +346,7 @@ impl std::fmt::Write for BoundedString {
 
 /// Finds the byte index of the first `(` that opens a parameter list at template
 /// depth zero, i.e. not inside `<...>`. Returns `None` if there is no such paren.
-fn signature_prefix_end(demangled: &str) -> Option<usize> {
+pub(crate) fn signature_prefix_end(demangled: &str) -> Option<usize> {
     let mut angle_depth = 0usize;
     for (idx, ch) in demangled.char_indices() {
         match ch {
@@ -374,7 +382,7 @@ fn is_cpp_like_type_keyword(candidate: &str) -> bool {
 
 /// Finds the byte index just past the `)` matching the `(` at `open_idx`.
 /// Returns `None` if the parentheses are unbalanced.
-fn matching_paren_end(demangled: &str, open_idx: usize) -> Option<usize> {
+pub(crate) fn matching_paren_end(demangled: &str, open_idx: usize) -> Option<usize> {
     let mut depth = 0usize;
     for (idx, ch) in demangled[open_idx..].char_indices() {
         match ch {
@@ -412,7 +420,7 @@ fn cpp_like_qualifier_end(demangled: &str, mut idx: usize) -> usize {
 /// (not a bare type keyword, not empty). On success returns the function name,
 /// the byte index of the opening `(`, and the byte index just past the closing
 /// `)` including any trailing qualifiers.
-fn analyze_cpp_like_signature(demangled: &str) -> Option<(String, usize, usize)> {
+pub(crate) fn analyze_cpp_like_signature(demangled: &str) -> Option<(String, usize, usize)> {
     for (idx, ch) in demangled.char_indices() {
         if ch != '(' {
             continue;
@@ -752,6 +760,39 @@ pub trait Demangle {
         opts: DemangleOptions,
         normalizer: &Normalizer,
     ) -> Cow<'_, str>;
+
+    /// Demangles the name and extracts typed structure from the rendering.
+    ///
+    /// Returns a [`DemangledInfo`] with the namespace path, leaf name,
+    /// entity kind, generic arguments, parameter and return types, and any
+    /// compiler disambiguation hash, so consumers do not have to re-parse
+    /// demangled text. The `display` field carries the rendering of `opts`;
+    /// `simple` always carries a name-only rendering.
+    ///
+    /// Returns `None` when the name is not mangled in any known scheme or
+    /// is an opaque MD5 name, mirroring [`Demangle::demangle`].
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # #[cfg(all(feature = "cpp", feature = "rust"))] {
+    /// use symbolic_common::Name;
+    /// use multi_demangle::{Demangle, DemangleOptions, DemangledKind};
+    ///
+    /// let info = Name::from("_ZN3std2io4Read11read_to_end17hb85a0f6802e14499E")
+    ///     .demangle_structured(DemangleOptions::complete())
+    ///     .unwrap();
+    /// assert_eq!(info.namespace, ["std", "io", "Read"]);
+    /// assert_eq!(info.name, "read_to_end");
+    /// assert_eq!(info.kind, DemangledKind::Method);
+    ///
+    /// let cpp = Name::from("_ZN3foo3barEv")
+    ///     .demangle_structured(DemangleOptions::complete())
+    ///     .unwrap();
+    /// assert_eq!(cpp.parameters, Some(Vec::new()));
+    /// # }
+    /// ```
+    fn demangle_structured(&self, opts: DemangleOptions) -> Option<DemangledInfo>;
 }
 
 impl Demangle for Name<'_> {
@@ -832,6 +873,10 @@ impl Demangle for Name<'_> {
             Some(demangled) => Cow::Owned(demangled),
             None => normalize_or_borrow(normalizer, self.as_str()),
         }
+    }
+
+    fn demangle_structured(&self, opts: DemangleOptions) -> Option<DemangledInfo> {
+        structured::demangle_structured(self, opts)
     }
 }
 
@@ -1070,6 +1115,10 @@ use pyo3::prelude::*;
 ///   and results keep the input order.
 /// - `demangle_symbol_ex(mangled, options=None)` — demangle and return a dict
 ///   with the result plus language, status, and decoration classification.
+/// - `demangle_symbol_structured(mangled, options=None)` — demangle and
+///   return a `DemangledInfo` with namespace, name, kind, parameters,
+///   return type, generics, and hash fields plus `to_dict()`; `None` when
+///   the symbol is not mangled.
 /// - `classify_symbol(mangled)` — the classification dict without demangling.
 /// - `detect_language(mangled)` — the short language name, or `None`.
 /// - `looks_mangled(mangled)` — cheap prefix-based mangling check.
@@ -1082,7 +1131,7 @@ mod multi_demangle {
         classify_symbol as classify_symbol_impl, demangle_many, demangle_one, demangle_unique_with,
         detect_language as detect_language_impl, language_name,
         looks_mangled as looks_mangled_impl, normalize_or_borrow, Decoration, Demangle,
-        DemangleOptions, Name, Normalizer, SymbolStatus,
+        DemangleOptions, DemangledInfo as StructuredInfo, Name, Normalizer, SymbolStatus,
     };
     use pyo3::exceptions::PyTypeError;
     use pyo3::prelude::*;
@@ -1421,5 +1470,137 @@ mod multi_demangle {
             SymbolStatus::Decorated { .. } => unreachable!("decorations are unwrapped above"),
         };
         (status_name, language, decorations)
+    }
+
+    /// Python-visible structured demangling result with read-only getters
+    /// and a `to_dict` serialization.
+    #[pyclass(name = "DemangledInfo")]
+    struct PyDemangledInfo {
+        info: StructuredInfo,
+        language: Option<&'static str>,
+    }
+
+    #[pymethods]
+    impl PyDemangledInfo {
+        /// The short language name (`"cpp"`, `"rust"`, `"scala-native"`, ...),
+        /// or `None` when unknown.
+        #[getter]
+        fn language(&self) -> Option<&'static str> {
+            self.language
+        }
+
+        /// The full verbose rendering.
+        #[getter]
+        fn display(&self) -> String {
+            self.info.display.clone()
+        }
+
+        /// The name-only rendering.
+        #[getter]
+        fn simple(&self) -> String {
+            self.info.simple.clone()
+        }
+
+        /// The namespace/module/class path, outermost first.
+        #[getter]
+        fn namespace(&self) -> Vec<String> {
+            self.info.namespace.clone()
+        }
+
+        /// The leaf name (function/method name, or the ObjC selector).
+        #[getter]
+        fn name(&self) -> String {
+            self.info.name.clone()
+        }
+
+        /// The lowercase kind name (`"function"`, `"method"`, `"closure"`, ...).
+        #[getter]
+        fn kind(&self) -> String {
+            self.info.kind.kind_name().to_string()
+        }
+
+        /// Whether this is an Objective-C class (`+`) method.
+        #[getter]
+        fn class_method(&self) -> Option<bool> {
+            self.info.kind.class_method()
+        }
+
+        /// Parameter type renderings, when the scheme encodes them.
+        #[getter]
+        fn parameters(&self) -> Option<Vec<String>> {
+            self.info.parameters.clone()
+        }
+
+        /// The return type rendering, when encoded.
+        #[getter]
+        fn return_type(&self) -> Option<String> {
+            self.info.return_type.clone()
+        }
+
+        /// The captured disambiguation hash (and/or `.llvm.` clone counter).
+        #[getter]
+        fn hash(&self) -> Option<String> {
+            self.info.hash.clone()
+        }
+
+        /// Generic/template argument renderings from the path, in path order.
+        #[getter]
+        fn template_args(&self) -> Option<Vec<String>> {
+            self.info.template_args.clone()
+        }
+
+        /// Whether the name carries generic/template arguments.
+        #[getter]
+        fn is_generic(&self) -> bool {
+            self.info.is_generic
+        }
+
+        /// The original mangled symbol.
+        #[getter]
+        fn mangled(&self) -> String {
+            self.info.mangled.clone()
+        }
+
+        /// Serializes the structured info into a plain dict for JSON.
+        fn to_dict<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyDict>> {
+            let dict = PyDict::new(py);
+            dict.set_item("mangled", &self.info.mangled)?;
+            dict.set_item("demangled", &self.info.display)?;
+            dict.set_item("simple", &self.info.simple)?;
+            dict.set_item("language", self.language)?;
+            dict.set_item("namespace", self.info.namespace.clone())?;
+            dict.set_item("name", &self.info.name)?;
+            dict.set_item("kind", self.info.kind.kind_name())?;
+            if let Some(class_method) = self.info.kind.class_method() {
+                dict.set_item("class_method", class_method)?;
+            }
+            dict.set_item("parameters", self.info.parameters.clone())?;
+            dict.set_item("return_type", self.info.return_type.clone())?;
+            dict.set_item("hash", self.info.hash.clone())?;
+            dict.set_item("template_args", self.info.template_args.clone())?;
+            dict.set_item("is_generic", self.info.is_generic)?;
+            Ok(dict)
+        }
+    }
+
+    /// Demangles a symbol and returns structured fields: namespace path,
+    /// leaf name, kind, parameters, return type, generics, and hash.
+    ///
+    /// Returns `None` when the symbol is not mangled in any known scheme.
+    /// The optional `options` argument behaves like `demangle_symbol`'s.
+    #[pyfunction]
+    #[pyo3(signature = (mangled, options = None))]
+    fn demangle_symbol_structured(
+        mangled: &str,
+        options: Option<PyDemangleOptions>,
+    ) -> PyResult<Option<PyDemangledInfo>> {
+        let (opts, _normalize) = resolve_options(options);
+        match Name::from(mangled).demangle_structured(opts) {
+            Some(info) => Ok(Some(PyDemangledInfo {
+                info,
+                language: detect_language_impl(mangled),
+            })),
+            None => Ok(None),
+        }
     }
 }

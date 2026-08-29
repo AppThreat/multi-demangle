@@ -21,7 +21,8 @@ use std::sync::LazyLock;
 
 use clap::{CommandFactory, FromArgMatches, Parser, ValueEnum};
 use multi_demangle::{
-    classify_symbol, language_name, Decoration, Demangle, DemangleOptions, Normalizer, SymbolStatus,
+    classify_symbol, language_name, Decoration, Demangle, DemangleOptions, DemangledInfo,
+    Normalizer, SymbolStatus,
 };
 use symbolic_common::{Language, Name, NameMangling};
 
@@ -172,6 +173,15 @@ impl Pipeline {
             None => Name::from(sym).demangle(self.opts),
         }
     }
+
+    /// The structured view of a symbol, honoring a forced `--language`.
+    fn structured(&self, sym: &str) -> Option<DemangledInfo> {
+        let name = match self.language {
+            Some(language) => Name::new(sym, NameMangling::Mangled, language),
+            None => Name::from(sym),
+        };
+        name.demangle_structured(self.opts)
+    }
 }
 
 /// Output rendering shared by both input modes.
@@ -194,9 +204,10 @@ impl Renderer {
     }
 
     /// One JSON record for a token together with its precomputed
-    /// classification.
+    /// classification and structured fields.
     fn record(&self, sym: &str, status: &SymbolStatus) -> String {
-        structured_record(sym, &self.pipeline.run(sym), status)
+        let info = self.pipeline.structured(sym);
+        structured_record(sym, &self.pipeline.run(sym), status, info.as_ref())
     }
 }
 
@@ -235,7 +246,12 @@ fn run_filter(renderer: &Renderer, structured: bool) -> io::Result<()> {
                 if matches!(status, SymbolStatus::Unmangled) && result == token {
                     continue;
                 }
-                writeln!(out, "{}", structured_record(token, &result, &status))?;
+                let info = renderer.pipeline.structured(token);
+                writeln!(
+                    out,
+                    "{}",
+                    structured_record(token, &result, &status, info.as_ref())
+                )?;
             }
         } else {
             let mut rendered = String::with_capacity(line.len() + 32);
@@ -327,8 +343,14 @@ fn push_json_string(out: &mut String, value: &str) {
 }
 
 /// Builds the JSON record mirroring the Python module's
-/// `demangle_symbol_ex`: mangled, demangled, status, language, decorations.
-fn structured_record(mangled: &str, demangled: &str, status: &SymbolStatus) -> String {
+/// `demangle_symbol_ex`: mangled, demangled, status, language, decorations,
+/// plus a nested `structured` object (or `null`) from the structured API.
+fn structured_record(
+    mangled: &str,
+    demangled: &str,
+    status: &SymbolStatus,
+    info: Option<&DemangledInfo>,
+) -> String {
     let (status_name, language, decorations) = describe(status);
     let mut out = String::with_capacity(mangled.len() + demangled.len() + 96);
     out.push_str("{\"mangled\":");
@@ -360,8 +382,81 @@ fn structured_record(mangled: &str, demangled: &str, status: &SymbolStatus) -> S
         }
         out.push('}');
     }
-    out.push_str("]}");
+    out.push_str("],\"structured\":");
+    match info {
+        Some(info) => push_structured_object(&mut out, info),
+        None => out.push_str("null"),
+    }
+    out.push('}');
     out
+}
+
+/// Appends the structured-info object: the fields of the library's
+/// `DemangledInfo` (language and mangled are already on the record).
+fn push_structured_object(out: &mut String, info: &DemangledInfo) {
+    out.push_str("{\"display\":");
+    push_json_string(out, &info.display);
+    out.push_str(",\"simple\":");
+    push_json_string(out, &info.simple);
+    out.push_str(",\"name\":");
+    push_json_string(out, &info.name);
+    out.push_str(",\"namespace\":[");
+    for (idx, component) in info.namespace.iter().enumerate() {
+        if idx > 0 {
+            out.push(',');
+        }
+        push_json_string(out, component);
+    }
+    out.push_str("],\"kind\":\"");
+    out.push_str(info.kind.kind_name());
+    out.push('"');
+    if let Some(class_method) = info.kind.class_method() {
+        out.push_str(",\"class_method\":");
+        out.push_str(if class_method { "true" } else { "false" });
+    }
+    match &info.parameters {
+        Some(parameters) => {
+            out.push_str(",\"parameters\":[");
+            for (idx, parameter) in parameters.iter().enumerate() {
+                if idx > 0 {
+                    out.push(',');
+                }
+                push_json_string(out, parameter);
+            }
+            out.push(']');
+        }
+        None => out.push_str(",\"parameters\":null"),
+    }
+    match &info.return_type {
+        Some(return_type) => {
+            out.push_str(",\"return_type\":");
+            push_json_string(out, return_type);
+        }
+        None => out.push_str(",\"return_type\":null"),
+    }
+    match &info.hash {
+        Some(hash) => {
+            out.push_str(",\"hash\":");
+            push_json_string(out, hash);
+        }
+        None => out.push_str(",\"hash\":null"),
+    }
+    match &info.template_args {
+        Some(template_args) => {
+            out.push_str(",\"template_args\":[");
+            for (idx, arg) in template_args.iter().enumerate() {
+                if idx > 0 {
+                    out.push(',');
+                }
+                push_json_string(out, arg);
+            }
+            out.push(']');
+        }
+        None => out.push_str(",\"template_args\":null"),
+    }
+    out.push_str(",\"is_generic\":");
+    out.push_str(if info.is_generic { "true" } else { "false" });
+    out.push('}');
 }
 
 /// Whether demangled output should be colorized. Structured output is JSON
@@ -628,23 +723,23 @@ mod tests {
     #[test]
     fn test_structured_record() {
         let status = classify_symbol("_Z1hic@GLIBC_2.2.5");
-        let record = structured_record("_Z1hic@GLIBC_2.2.5", "_Z1hic@GLIBC_2.2.5", &status);
+        let record = structured_record("_Z1hic@GLIBC_2.2.5", "_Z1hic@GLIBC_2.2.5", &status, None);
         assert_eq!(
             record,
             "{\"mangled\":\"_Z1hic@GLIBC_2.2.5\",\"demangled\":\"_Z1hic@GLIBC_2.2.5\",\
              \"status\":\"mangled\",\"language\":\"cpp\",\
-             \"decorations\":[{\"kind\":\"version\",\"value\":\"GLIBC_2.2.5\"}]}"
+             \"decorations\":[{\"kind\":\"version\",\"value\":\"GLIBC_2.2.5\"}],\"structured\":null}"
         );
     }
 
     #[test]
     fn test_structured_record_unmangled() {
         let status = classify_symbol("libc.so.6");
-        let record = structured_record("libc.so.6", "libc.so.6", &status);
+        let record = structured_record("libc.so.6", "libc.so.6", &status, None);
         assert_eq!(
             record,
             "{\"mangled\":\"libc.so.6\",\"demangled\":\"libc.so.6\",\
-             \"status\":\"unmangled\",\"language\":null,\"decorations\":[]}"
+             \"status\":\"unmangled\",\"language\":null,\"decorations\":[],\"structured\":null}"
         );
     }
 }

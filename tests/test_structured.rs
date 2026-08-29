@@ -1,0 +1,291 @@
+//! Structured demangling tests. The Rust expectations port the primary
+//! consumer's (OWASP blint) `callgraph/canon.py` test oracle — hash capture,
+//! `<Type as Trait>` reduction, closure/glue/intrinsic classification — and
+//! extend it to every supported language.
+
+#![cfg(all(
+    feature = "cpp",
+    feature = "rust",
+    feature = "swift",
+    feature = "scala-native"
+))]
+
+use multi_demangle::{Demangle, DemangleOptions, DemangledKind};
+use similar_asserts::assert_eq;
+use symbolic_common::Name;
+
+fn structured(symbol: &str) -> multi_demangle::DemangledInfo {
+    Name::from(symbol)
+        .demangle_structured(DemangleOptions::complete())
+        .expect("structured demangling succeeds")
+}
+
+// --- Rust: ported from blint's tests/test_callgraph_canon.py oracle ---
+
+#[test]
+fn rust_legacy_symbol_fields() {
+    let info = structured("_ZN3std2io4Read11read_to_end17hb85a0f6802e14499E");
+    assert_eq!(info.language, symbolic_common::Language::Rust);
+    assert_eq!(info.namespace, ["std", "io", "Read"]);
+    assert_eq!(info.name, "read_to_end");
+    assert_eq!(info.kind, DemangledKind::Method);
+    assert_eq!(info.hash.as_deref(), Some("hb85a0f6802e14499"));
+    // Legacy Rust mangling does not encode parameter types.
+    assert_eq!(info.parameters, None);
+    assert!(!info.is_generic);
+}
+
+#[test]
+fn rust_trait_qualified_self_is_reduced() {
+    // <core::iter::adapters::map::Map<I,F> as core::iter::traits::iterator::Iterator>::next
+    let info = structured("__ZN102_$LT$core..iter..adapters..map..Map$LT$I$C$F$GT$$u20$as$u20$core..iter..traits..iterator..Iterator$GT$4next17h588c4c3ad8f9f79aE");
+    // The implementing type is what survives in the namespace, mirroring
+    // `<SubType as core::fmt::Debug>::fmt` -> `SubType::fmt` in the oracle.
+    assert_eq!(
+        info.namespace,
+        ["core", "iter", "adapters", "map", "Map<I,F>"]
+    );
+    assert_eq!(info.name, "next");
+    assert_eq!(info.kind, DemangledKind::Method);
+    assert_eq!(info.hash.as_deref(), Some("h588c4c3ad8f9f79a"));
+    assert_eq!(
+        info.template_args,
+        Some(vec!["I".to_string(), "F".to_string(),])
+    );
+    assert!(info.is_generic);
+}
+
+#[test]
+fn rust_hash_and_llvm_counter_captured() {
+    // The oracle input "core::ptr::drop_in_place<alloc::vec::Vec<u8>>::
+    // h41b828a7ca01b8c4.llvm.12153207245666130899" in mangled form.
+    let info = structured("_ZN5tokio7runtime4task7harness20Harness$LT$T$C$S$GT$8complete17h79b950493dfd179dE.llvm.3144946739014404372");
+    assert_eq!(
+        info.display,
+        "tokio::runtime::task::harness::Harness<T,S>::complete"
+    );
+    assert_eq!(info.name, "complete");
+    assert_eq!(
+        info.hash.as_deref(),
+        Some("h79b950493dfd179d.llvm.3144946739014404372")
+    );
+    assert_eq!(
+        info.template_args,
+        Some(vec!["T".to_string(), "S".to_string(),])
+    );
+    assert!(info.is_generic);
+    assert_eq!(info.kind, DemangledKind::Method);
+}
+
+#[test]
+fn rust_impl_for_block_is_kept_and_named() {
+    let info = structured("__ZN10hyper_util6client6legacy7connect4http112_$LT$impl$u20$hyper_util..client..legacy..connect..Connection$u20$for$u20$tokio..net..tcp..stream..TcpStream$GT$9connected17h5b8a4dc4058a3652E");
+    // A mid-path impl block stays in the namespace as rendered (reduction
+    // applies to the leading qualified-self prefix), and its contents are
+    // not template arguments.
+    assert_eq!(info.name, "connected");
+    assert_eq!(info.namespace.last().map(String::as_str), Some(
+        "<impl hyper_util::client::legacy::connect::Connection for tokio::net::tcp::stream::TcpStream>"
+    ));
+    assert_eq!(info.hash.as_deref(), Some("h5b8a4dc4058a3652"));
+    assert_eq!(info.template_args, None);
+    assert!(!info.is_generic);
+}
+
+#[test]
+fn rust_crt_glue_and_closures() {
+    let info = structured("__RNvCsdBezzDwma51_7___rustc12___rust_alloc");
+    assert_eq!(info.kind, DemangledKind::Glue);
+    assert_eq!(info.name, "__rust_alloc");
+
+    let closure = structured("_ZN10wasm_smith4core15closure_2202_7717h0123456789abcdefE");
+    assert_eq!(closure.kind, DemangledKind::Closure);
+
+    let drop_glue = structured("_ZN4core3ptr13drop_in_place17h588c4c3ad8f9f79aE");
+    assert_eq!(drop_glue.kind, DemangledKind::Glue);
+    assert_eq!(drop_glue.name, "drop_in_place");
+}
+
+#[test]
+fn rust_v0_symbol_fields() {
+    let info = structured("__RNvCsdBezzDwma51_7___rustc10rust_panic");
+    assert_eq!(info.namespace, ["__rustc"]);
+    assert_eq!(info.name, "rust_panic");
+}
+
+// --- C++ ---
+
+#[test]
+fn cpp_function_fields() {
+    let info = structured("_ZN3foo3barEv");
+    assert_eq!(info.language, symbolic_common::Language::Cpp);
+    assert_eq!(info.namespace, ["foo"]);
+    assert_eq!(info.name, "bar");
+    assert_eq!(info.kind, DemangledKind::Function);
+    assert_eq!(info.parameters, Some(Vec::new()));
+    assert_eq!(info.return_type, None);
+    assert_eq!(info.simple, "foo::bar");
+}
+
+#[test]
+fn cpp_msvc_fields() {
+    let info = structured("?h@@YAXH@Z");
+    assert_eq!(info.display, "void h(int)");
+    assert_eq!(info.name, "h");
+    assert_eq!(info.parameters, Some(vec!["int".to_string()]));
+    assert_eq!(info.return_type.as_deref(), Some("void"));
+}
+
+#[test]
+fn cpp_template_function() {
+    let info = structured("_Z3addIiET_S0_S0_");
+    assert_eq!(info.display, "int add<int>(int, int)");
+    assert_eq!(info.name, "add");
+    assert_eq!(info.template_args, Some(vec!["int".to_string()]));
+    assert_eq!(
+        info.parameters,
+        Some(vec!["int".to_string(), "int".to_string(),])
+    );
+    assert_eq!(info.return_type.as_deref(), Some("int"));
+    assert!(info.is_generic);
+    assert_eq!(info.kind, DemangledKind::Function);
+}
+
+#[test]
+fn cpp_constructor_and_method() {
+    let ctor = structured("_ZN3FooC1Ev");
+    assert_eq!(ctor.name, "Foo");
+    assert_eq!(ctor.namespace, ["Foo"]);
+    assert_eq!(ctor.kind, DemangledKind::Method);
+
+    let getter = structured("_ZNK3Foo3getEv");
+    assert_eq!(getter.name, "get");
+    assert_eq!(getter.namespace, ["Foo"]);
+    assert_eq!(getter.kind, DemangledKind::Method);
+    assert_eq!(getter.parameters, Some(Vec::new()));
+}
+
+#[test]
+fn cpp_vtable_typeinfo_and_thunks() {
+    let vtable = structured("_ZTVN10__cxxabiv117__class_type_infoE");
+    assert_eq!(vtable.kind, DemangledKind::VirtualTable);
+    assert_eq!(vtable.namespace, ["__cxxabiv1"]);
+    assert_eq!(vtable.name, "__class_type_info");
+
+    let thunk = structured("_ZThn8_N3foo3barEv");
+    assert_eq!(thunk.kind, DemangledKind::MethodThunk);
+
+    // Typeinfo symbols do not demangle in this cpp_demangle version, so the
+    // structured API declines them just like `demangle` does.
+    assert_eq!(
+        Name::from("_ZTI4Foo").demangle_structured(DemangleOptions::complete()),
+        None
+    );
+}
+
+#[test]
+fn cpp_builtin_is_intrinsic() {
+    let info = structured("_Z14__builtin_testv");
+    assert_eq!(info.name, "__builtin_test");
+    assert_eq!(info.kind, DemangledKind::Intrinsic);
+}
+
+// --- Swift ---
+
+#[test]
+fn swift_function_fields() {
+    let info = structured("$s8mangling6curry1yyF");
+    assert_eq!(info.language, symbolic_common::Language::Swift);
+    assert_eq!(info.namespace, ["mangling"]);
+    assert_eq!(info.name, "curry1");
+    assert_eq!(info.kind, DemangledKind::Function);
+    assert_eq!(info.parameters, Some(Vec::new()));
+    assert_eq!(info.return_type.as_deref(), Some("()"));
+}
+
+#[test]
+fn swift_generic_method_fields() {
+    let info = structured("$s8mangling12GenericUnionO3FooyACyxGSicAEmlF");
+    assert_eq!(info.display, "mangling.GenericUnion.Foo<A>(mangling.GenericUnion<A>.Type) -> (Swift.Int) -> mangling.GenericUnion<A>");
+    assert_eq!(info.simple, "GenericUnion.Foo<A>");
+    // Swift module paths split on `.`, with generic groups kept together.
+    assert_eq!(info.namespace, ["mangling", "GenericUnion"]);
+    assert_eq!(info.name, "Foo");
+    assert_eq!(info.template_args, Some(vec!["A".to_string()]));
+    assert!(info.is_generic);
+    assert_eq!(info.kind, DemangledKind::Method);
+    assert_eq!(
+        info.parameters,
+        Some(vec!["mangling.GenericUnion<A>.Type".to_string()])
+    );
+    assert_eq!(
+        info.return_type.as_deref(),
+        Some("(Swift.Int) -> mangling.GenericUnion<A>")
+    );
+}
+
+// --- Scala Native ---
+
+#[test]
+fn scala_native_method_fields() {
+    let info = structured("_SM17java.lang.IntegerD7compareiiiEo");
+    assert_eq!(info.namespace, ["java", "lang", "Integer"]);
+    assert_eq!(info.name, "compare");
+    assert_eq!(info.kind, DemangledKind::Method);
+    assert_eq!(
+        info.parameters,
+        Some(vec!["Int".to_string(), "Int".to_string(),])
+    );
+    assert_eq!(info.return_type.as_deref(), Some("Int"));
+}
+
+// --- ObjC ---
+
+#[test]
+fn objc_selectors() {
+    let instance = structured("-[Foo bar:blub:]");
+    assert_eq!(instance.language, symbolic_common::Language::ObjC);
+    assert_eq!(instance.namespace, ["Foo"]);
+    assert_eq!(instance.name, "bar:blub:");
+    assert_eq!(
+        instance.kind,
+        DemangledKind::ObjCMethod {
+            class_method: false
+        }
+    );
+
+    let class_method = structured("+[Foo bar:]");
+    assert_eq!(
+        class_method.kind,
+        DemangledKind::ObjCMethod { class_method: true }
+    );
+    assert_eq!(class_method.name, "bar:");
+}
+
+// --- Contracts shared with the string API ---
+
+#[test]
+fn unmangled_and_md5_inputs_are_none() {
+    assert_eq!(
+        Name::from("libc.so.6").demangle_structured(DemangleOptions::complete()),
+        None
+    );
+    assert_eq!(
+        Name::from("??@8ba8d245c9eca390356129098dbe9f73@")
+            .demangle_structured(DemangleOptions::complete()),
+        None
+    );
+}
+
+#[test]
+fn simple_is_always_name_only() {
+    let info = structured("_SM17java.lang.IntegerD7compareiiiEo");
+    assert_eq!(info.simple, "java.lang.Integer.compare");
+    assert_eq!(info.display, "java.lang.Integer.compare(Int,Int): Int");
+
+    let name_only = Name::from("_SM17java.lang.IntegerD7compareiiiEo")
+        .demangle_structured(DemangleOptions::name_only())
+        .unwrap();
+    // With name-only options the display itself is the simple rendering.
+    assert_eq!(name_only.display, name_only.simple);
+}

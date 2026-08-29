@@ -83,6 +83,36 @@ can share it with their own batching. Enabling the `parallel` cargo feature
 multi-demangle = { version = "...", features = ["parallel"] }
 ```
 
+### Structured demangling
+
+`demangle_structured` extracts typed fields from the demangled rendering —
+namespace path, leaf name, entity kind, generics, parameters, return type,
+and compiler disambiguation hashes — so consumers do not have to re-parse
+text:
+
+```rust
+use symbolic_common::Name;
+use multi_demangle::{Demangle, DemangleOptions};
+
+let info = Name::from("_ZN3std2io4Read11read_to_end17hb85a0f6802e14499E")
+    .demangle_structured(DemangleOptions::complete())
+    .unwrap();
+assert_eq!(info.namespace, ["std", "io", "Read"]);
+assert_eq!(info.name, "read_to_end");
+assert_eq!(info.kind, multi_demangle::DemangledKind::Method);
+assert_eq!(info.hash.as_deref(), Some("hb85a0f6802e14499"));
+assert_eq!(info.parameters, None); // legacy Rust encodes no parameter types
+```
+
+`DemangledKind` classifies the entity (best-effort, modeled on the primary
+consumer's tables): `Function`, `Method`, `Closure`, `Glue` (CRT/linker glue
+and drop glue), `Intrinsic`, `MethodThunk`, `VirtualTable`, `TypeInfo`,
+`ObjCMethod { class_method }`, `StaticVariable`, or `Other`.
+
+`<Type as Trait>::` and `<impl Trait for Type>::` prefixes are reduced to the
+implementing type in the namespace, and trailing Rust hashes plus `.llvm.N`
+clone counters are captured into `hash` instead of being silently stripped.
+
 ### Symbol hygiene
 
 On top of demangling, the crate provides cheap, prefix-based helpers for the
@@ -248,6 +278,30 @@ passes to the fallback when demangling does not succeed, and
 `Normalizer.matching()` provides the pass set for cross-symbol matching
 (`memcpy@plt` → `memcpy`, `__imp_CreateFileW` → `CreateFileW`).
 
+### Structured demangling
+
+```
+>>> info = multi_demangle.demangle_symbol_structured("_ZN3std2io4Read11read_to_end17hb85a0f6802e14499E")
+>>> info.language
+'rust'
+>>> info.name
+'read_to_end'
+>>> info.namespace
+['std', 'io', 'Read']
+>>> info.kind
+'method'
+>>> info.hash
+'hb85a0f6802e14499'
+>>> info.parameters is None  # legacy Rust encodes no parameter types
+True
+```
+
+`demangle_symbol_structured` returns a `DemangledInfo` with read-only
+getters (`display`, `simple`, `namespace`, `name`, `kind`, `parameters`,
+`return_type`, `hash`, `template_args`, `is_generic`, `mangled`, and
+`class_method` for ObjC) plus `to_dict()` for JSON serialization. It returns
+`None` for symbols that are not mangled in any known scheme.
+
 ## CLI
 
 A `c++filt`-style command line tool ships with the crate. Install it with a
@@ -287,7 +341,7 @@ Options:
 | `--no-parameters` / `--no-return-type` | individual output toggles |
 | `-l, --language <LANG>` | force a backend instead of auto-detecting (`cpp`, `rust`, `swift`, `objc`, `objcpp`, `scala-native`) |
 | `--normalize` | apply the symbol hygiene passes (`__imp_`, `@plt`, ELF versions, Rust hash suffixes and `$`-escapes, `.llvm.` clone suffixes, pseudo-symbols) to symbols that cannot be demangled, then demangle the cleaned symbol when it succeeds |
-| `-s, --structured` | print one JSON record per symbol with its status, language, and linker decorations |
+| `-s, --structured` | print one JSON record per symbol with its status, language, linker decorations, and the structured fields (name, namespace, kind, parameters, return type, generics, hash) |
 | `--list-languages` | print the supported languages and the backends enabled in this build |
 | `--color=auto/always/never` | colorize successfully demangled output (auto is the default) |
 
