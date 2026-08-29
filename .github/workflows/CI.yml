@@ -33,14 +33,20 @@ jobs:
       - name: Check formatting
         run: cargo fmt --check
         shell: bash
+      # MSVC cannot compile the vendored Swift demangler headers (`llvm` is
+      # ambiguous with the vendored `__swift::__runtime::llvm`), so every
+      # step that may rebuild the C++ shim needs clang. `$GITHUB_ENV`
+      # persists it across steps — a plain `export` would not.
+      - name: Use clang for the vendored Swift demangler (Windows)
+        if: runner.os == 'Windows'
+        run: |
+          echo "CC=clang" >> "$GITHUB_ENV"
+          echo "CXX=clang++" >> "$GITHUB_ENV"
+        shell: bash
       - name: Run cargo test
         run: |
           if [ "${{ runner.os }}" = "macOS" ]; then
             export RUSTFLAGS="-C link-arg=-undefined -C link-arg=dynamic_lookup"
-          fi
-          if [ "${{ runner.os }}" = "Windows" ]; then
-            export CC=clang
-            export CXX=clang++
           fi
           # `--all-features` implies `extension-module`, which only links with
           # the dynamic-lookup RUSTFLAGS above; `parallel` is the other real
