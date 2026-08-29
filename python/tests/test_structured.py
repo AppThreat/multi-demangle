@@ -141,7 +141,7 @@ def test_normalize_is_rejected_explicitly():
     # Normalization only applies when demangling fails, and a failed
     # demangling has no structure to return — reject instead of silently
     # ignoring the flag.
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match="normalize is not supported"):
         multi_demangle.demangle_symbol_structured(
             "_ZN3foo3barEv",
             options=multi_demangle.DemangleOptions(normalize=True),

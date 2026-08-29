@@ -751,16 +751,16 @@ fn classify_kind(
         return DemangledKind::Intrinsic;
     }
 
-    // C++ member operators (`operator()`, `operator<`, ...) are methods
-    // regardless of the owner's casing; the template-heavy owners they
-    // appear on (`function_ref<void ()>`) often are not CamelCase.
-    if !namespace.is_empty() && name.starts_with("operator") {
-        return DemangledKind::Method;
-    }
-
-    // A CamelCase penultimate segment indicates a method on a type.
+    // A method's owner looks like a type: CamelCase, or template-shaped
+    // (`std::vector<int, std::allocator<int> >`, `function_ref<void ()>`).
+    // A template owner is a type by construction, so leaf names on it —
+    // including member operators like `operator()` — are methods, while
+    // free operators in a plain namespace (`ns::operator==`) stay
+    // functions.
     if let Some(owner) = namespace.last() {
-        if owner.chars().next().is_some_and(|c| c.is_uppercase()) {
+        let owner_is_type =
+            owner.chars().next().is_some_and(|c| c.is_uppercase()) || owner.contains('<');
+        if owner_is_type {
             return DemangledKind::Method;
         }
     }

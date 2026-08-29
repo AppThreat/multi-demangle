@@ -670,18 +670,38 @@ fn try_demangle_swift(_ident: &str, _opts: DemangleOptions) -> Option<String> {
 /// Returns the vendored Swift demangler's node-tree dump for `sym`, which
 /// exposes declaration structure (node kinds, modules, type contexts) that
 /// the string rendering does not.
+///
+/// The dump buffer is a per-thread scratch allocation reserved once and
+/// reused across calls, so structured mode never re-zeroes 64 KiB per
+/// symbol. A dump that does not fit is rejected (`None`), which callers
+/// treat as the signal to fall back to text-derived extraction.
 #[cfg(feature = "swift")]
 pub(crate) fn try_dump_swift(sym: &str) -> Option<String> {
-    let mut buf = vec![0; 64 * 1024];
-    let cstr = CString::new(sym).ok()?;
-    let ok = unsafe { multi_demangle_swift_dump(cstr.as_ptr(), buf.as_mut_ptr(), buf.len()) };
-    if ok == 0 {
-        return None;
+    use std::cell::RefCell;
+
+    thread_local! {
+        /// Scratch buffer for node dumps; capacity is reserved without
+        /// zero-filling and the C side always writes a NUL terminator.
+        static DUMP_BUFFER: RefCell<Vec<c_char>> = const { RefCell::new(Vec::new()) };
     }
-    let dumped = unsafe { CStr::from_ptr(buf.as_ptr()) }
-        .to_string_lossy()
-        .into_owned();
-    Some(dumped)
+
+    let cstr = CString::new(sym).ok()?;
+    DUMP_BUFFER.with(|cell| {
+        let mut buffer = cell.borrow_mut();
+        if buffer.capacity() == 0 {
+            buffer.reserve(64 * 1024);
+        }
+        let ok = unsafe {
+            multi_demangle_swift_dump(cstr.as_ptr(), buffer.as_mut_ptr(), buffer.capacity())
+        };
+        if ok == 0 {
+            return None;
+        }
+        let dumped = unsafe { CStr::from_ptr(buffer.as_ptr()) }
+            .to_string_lossy()
+            .into_owned();
+        Some(dumped)
+    })
 }
 
 /// Objective-C selectors are their own readable name, so "demangling" returns
@@ -1648,7 +1668,7 @@ mod multi_demangle {
         let (opts, normalize) = resolve_options(options);
         if normalize {
             return Err(PyValueError::new_err(
-                "normalize is not supported by demangle_symbol_structured;                  use demangle_symbol for normalized string output",
+                "normalize is not supported by demangle_symbol_structured; use demangle_symbol for normalized string output",
             ));
         }
         match Name::from(mangled).demangle_structured(opts) {

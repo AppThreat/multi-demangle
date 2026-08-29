@@ -168,6 +168,27 @@ fn cpp_template_arg_with_function_type() {
 }
 
 #[test]
+fn cpp_free_operators_are_not_methods() {
+    // A free operator in a namespace: the owner is not a type, so the
+    // owner-shape predicate must not fire on the leaf's "operator" prefix.
+    let info = structured("_ZN3ns2eqERKNS_1AES2_");
+    assert_eq!(info.namespace, ["ns2"]);
+    assert_eq!(info.name, "operator==");
+    assert_eq!(info.kind, DemangledKind::Function);
+}
+
+#[test]
+fn cpp_lowercase_typed_methods() {
+    // Template-shaped owners are types by construction, so methods on
+    // lowercase-typed classes (the entire std:: surface) are methods even
+    // though the CamelCase heuristic cannot see it.
+    let info = structured("_ZNSt6vectorIiSaIiEE9push_backERKi");
+    assert_eq!(info.namespace, ["std", "vector<int, std::allocator<int> >"]);
+    assert_eq!(info.name, "push_back");
+    assert_eq!(info.kind, DemangledKind::Method);
+}
+
+#[test]
 fn cpp_constructor_and_method() {
     let ctor = structured("_ZN3FooC1Ev");
     assert_eq!(ctor.name, "Foo");
