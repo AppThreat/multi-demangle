@@ -42,3 +42,26 @@ extern "C" int multi_demangle_swift(const char *symbol,
 extern "C" int multi_demangle_is_swift_symbol(const char *symbol) {
     return swift::Demangle::isSwiftSymbol(symbol);
 }
+
+// Returns the demangler's node-tree dump for a mangled Swift symbol, which
+// exposes structure (node kinds, declaration names, modules) that the plain
+// string rendering does not. Returns 0 on failure, non-zero on success.
+extern "C" int multi_demangle_swift_dump(const char *symbol,
+                                         char *buffer,
+                                         size_t buffer_length) {
+    swift::Demangle::Context context;
+    swift::Demangle::NodePointer root =
+        context.demangleSymbolAsNode(llvm::StringRef(symbol));
+    if (root == nullptr) {
+        return false;
+    }
+
+    std::string dump = swift::Demangle::getNodeTreeAsString(root);
+    if (dump.size() == 0 || dump.size() >= buffer_length) {
+        return false;
+    }
+
+    memcpy(buffer, dump.c_str(), dump.size());
+    buffer[dump.size()] = '\0';
+    return true;
+}

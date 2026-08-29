@@ -111,6 +111,32 @@ def test_objc_selectors():
     assert class_method["class_method"] is True
 
 
+def test_phase2_msvc_static_variable():
+    d = _dict("?value@ns@@3HA")
+    assert d["kind"] == "static_variable"
+    assert d["namespace"] == ["ns"]
+    assert d["name"] == "value"
+    assert d["parameters"] is None
+
+
+def test_phase2_swift_getter_kind():
+    d = _dict("$s8mangling24InstanceAndClassPropertyV8propertySivg")
+    assert d["kind"] == "method"
+    assert d["namespace"] == ["mangling", "InstanceAndClassProperty"]
+    assert d["name"] == "property"
+
+
+def test_phase2_swift_closure_kind():
+    d = _dict("$s8mangling10HasVarInitV5stateSbvpZfiSbyKXKfu_")
+    assert d["kind"] == "closure"
+
+
+def test_phase2_itanium_guard_variable():
+    d = _dict("_ZGVZN3foo3barEvE5mutex")
+    assert d["kind"] == "static_variable"
+    assert d["name"] == "mutex"
+
+
 def test_unmangled_input_returns_none():
     assert multi_demangle.demangle_symbol_structured("libc.so.6") is None
 

@@ -113,6 +113,16 @@ and drop glue), `Intrinsic`, `MethodThunk`, `VirtualTable`, `TypeInfo`,
 implementing type in the namespace, and trailing Rust hashes plus `.llvm.N`
 clone counters are captured into `hash` instead of being silently stripped.
 
+Where a backend exposes its parse tree, the fields come from the AST rather
+than text: MSVC symbols are walked through `msvc_demangler`'s parse tree
+(which is how a data symbol like `?value@ns@@3HA` is correctly a
+`StaticVariable` and `??_7Bar@@6B@` a `VirtualTable`), Swift symbols through
+the vendored demangler's node tree (accessors, initializers, and closures
+keep their kinds; accessor names resolve to the wrapped property), and
+Itanium kinds come from the mangling grammar's own prefixes (`_ZGV` guard
+variables, `_ZTV`/`_ZTC` vtables, `_ZTh`/`_ZTv` thunks). Text-derived
+extraction remains the fallback for every language.
+
 ### Symbol hygiene
 
 On top of demangling, the crate provides cheap, prefix-based helpers for the

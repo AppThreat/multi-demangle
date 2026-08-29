@@ -239,6 +239,124 @@ fn scala_native_method_fields() {
     assert_eq!(info.return_type.as_deref(), Some("Int"));
 }
 
+// --- Phase 2: AST-backed / mangling-grammar fidelity ---
+
+#[test]
+fn swift_accessor_kind_from_node_dump() {
+    let getter = structured("$s8mangling24InstanceAndClassPropertyV8propertySivg");
+    assert_eq!(getter.kind, DemangledKind::Method);
+    assert_eq!(getter.namespace, ["mangling", "InstanceAndClassProperty"]);
+    assert_eq!(getter.name, "property");
+
+    let static_getter = structured("$s8mangling24InstanceAndClassPropertyV8propertySivgZ");
+    assert_eq!(static_getter.kind, DemangledKind::Method);
+    assert_eq!(static_getter.name, "property");
+}
+
+#[test]
+fn swift_closure_kind_from_node_dump() {
+    let closure = structured("$s8mangling10HasVarInitV5stateSbvpZfiSbyKXKfu_");
+    assert_eq!(closure.kind, DemangledKind::Closure);
+    assert_eq!(closure.name, "implicit closure #1 : @autoclosure");
+}
+
+#[test]
+fn swift_method_kind_from_node_dump() {
+    // The demangler's tree has the enum context as a sibling of the
+    // function's identifier; the walker must classify Foo as a method.
+    let info = structured("$s8mangling12GenericUnionO3FooyACyxGSicAEmlF");
+    assert_eq!(info.kind, DemangledKind::Method);
+    assert_eq!(info.namespace, ["mangling", "GenericUnion"]);
+    assert_eq!(info.name, "Foo");
+    // Signature fields still come from the rendering.
+    assert_eq!(info.template_args, Some(vec!["A".to_string()]));
+}
+
+#[test]
+fn swift_metadata_descriptor_is_other_kind() {
+    // Real iOS-corpus symbol: associated type descriptors are metadata
+    // artifacts, and the node dump keeps them out of the function/method
+    // heuristics that the rendered text would suggest.
+    let descriptor = structured("_$s11MaskStorages4SIMDPTl");
+    assert_eq!(
+        descriptor.kind,
+        DemangledKind::Other("AssociatedTypeDescriptor".to_string())
+    );
+    assert_eq!(descriptor.name, "MaskStorage");
+}
+
+#[test]
+fn msvc_static_variable_vs_function() {
+    // A data symbol has no parameter list; only the parse tree knows it is
+    // a variable, not a nullary function.
+    let value = structured("?value@ns@@3HA");
+    assert_eq!(value.kind, DemangledKind::StaticVariable);
+    assert_eq!(value.namespace, ["ns"]);
+    assert_eq!(value.name, "value");
+    assert_eq!(value.parameters, None);
+    assert_eq!(value.display, "int ns::value");
+}
+
+#[test]
+fn msvc_vftable_and_rtti_kinds() {
+    let vftable = structured("??_7Bar@@6B@");
+    assert_eq!(vftable.kind, DemangledKind::VirtualTable);
+    assert_eq!(vftable.namespace, ["Bar"]);
+    assert_eq!(vftable.name, "`vftable'");
+
+    let rtti = structured("??_R0?AVBar@@@8");
+    assert_eq!(rtti.kind, DemangledKind::TypeInfo);
+    assert_eq!(rtti.name, "Bar::`RTTI Type Descriptor'");
+}
+
+#[test]
+fn msvc_ctor_dtor_identity() {
+    let ctor = structured("??0Bar@@QEAA@XZ");
+    assert_eq!(ctor.kind, DemangledKind::Method);
+    assert_eq!(ctor.namespace, ["Bar"]);
+    assert_eq!(ctor.name, "Bar");
+    // Access specifiers are not return types.
+    assert_eq!(ctor.return_type, None);
+    assert_eq!(ctor.parameters, Some(vec!["void".to_string()]));
+
+    let dtor = structured("??1Bar@@QEAA@XZ");
+    assert_eq!(dtor.kind, DemangledKind::Method);
+    assert_eq!(dtor.namespace, ["Bar"]);
+    assert_eq!(dtor.name, "~Bar");
+    assert_eq!(dtor.return_type, None);
+}
+
+#[test]
+fn msvc_thunk_signature_split() {
+    // The entity name contains spaces; the AST-guided split keeps the
+    // return type clean instead of truncating at the last space.
+    let thunk = structured("??_EBar@@W3EAAXXZ");
+    assert_eq!(thunk.kind, DemangledKind::MethodThunk);
+    assert_eq!(thunk.namespace, ["Bar"]);
+    assert_eq!(thunk.return_type.as_deref(), Some("void"));
+    assert_eq!(thunk.parameters, Some(vec!["void".to_string()]));
+}
+
+#[test]
+fn msvc_template_member() {
+    let info = structured("?fn@?$Vec@H@@QEAAXXZ");
+    assert_eq!(info.kind, DemangledKind::Method);
+    assert_eq!(info.namespace, ["Vec<int>"]);
+    assert_eq!(info.name, "fn");
+    assert!(info.is_generic);
+    assert_eq!(info.return_type.as_deref(), Some("void"));
+}
+
+#[test]
+fn itanium_guard_variable_kind() {
+    let guard = structured("_ZGVZN3foo3barEvE5mutex");
+    assert_eq!(guard.kind, DemangledKind::StaticVariable);
+    assert_eq!(guard.namespace, ["foo", "bar()"]);
+    assert_eq!(guard.name, "mutex");
+    // The enclosing function's parameter list is not this entity's.
+    assert_eq!(guard.parameters, None);
+}
+
 // --- ObjC ---
 
 #[test]

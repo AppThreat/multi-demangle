@@ -86,6 +86,9 @@ extern "C" {
 
     /// Checks whether the symbol is mangled in any known Swift scheme.
     fn multi_demangle_is_swift_symbol(sym: *const c_char) -> c_int;
+
+    /// Writes the demangler's node-tree dump for the symbol into the buffer.
+    fn multi_demangle_swift_dump(sym: *const c_char, buf: *mut c_char, buf_len: usize) -> c_int;
 }
 
 /// Options for [`Demangle::demangle`].
@@ -634,6 +637,23 @@ fn try_demangle_swift(ident: &str, opts: DemangleOptions) -> Option<String> {
 #[cfg(not(feature = "swift"))]
 fn try_demangle_swift(_ident: &str, _opts: DemangleOptions) -> Option<String> {
     None
+}
+
+/// Returns the vendored Swift demangler's node-tree dump for `sym`, which
+/// exposes declaration structure (node kinds, modules, type contexts) that
+/// the string rendering does not.
+#[cfg(feature = "swift")]
+pub(crate) fn try_dump_swift(sym: &str) -> Option<String> {
+    let mut buf = vec![0; 64 * 1024];
+    let cstr = CString::new(sym).ok()?;
+    let ok = unsafe { multi_demangle_swift_dump(cstr.as_ptr(), buf.as_mut_ptr(), buf.len()) };
+    if ok == 0 {
+        return None;
+    }
+    let dumped = unsafe { CStr::from_ptr(buf.as_ptr()) }
+        .to_string_lossy()
+        .into_owned();
+    Some(dumped)
 }
 
 /// Objective-C selectors are their own readable name, so "demangling" returns

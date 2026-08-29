@@ -33,6 +33,11 @@
 
 use std::fmt::Display;
 
+#[cfg(feature = "msvc")]
+mod msvc;
+#[cfg(feature = "swift")]
+mod swift;
+
 use symbolic_common::{Language, Name, NameMangling};
 
 use crate::{Demangle, DemangleOptions, SymbolStatus};
@@ -201,16 +206,61 @@ pub(crate) fn demangle_structured(name: &Name<'_>, opts: DemangleOptions) -> Opt
         .unwrap_or_else(|| display.clone());
 
     let hash = capture_hash(sym, language);
-    let (path, parameters, return_type) = match language {
-        Language::Cpp | Language::ObjCpp => split_cpp_signature(&display),
+
+    // MSVC renderings lead with access specifiers and thunk markers that
+    // are not part of the return type; the AST-backed walk below provides
+    // kind and identity, the cleaned text still splits the signature.
+    #[allow(unused_mut)]
+    let mut display_for_split = display.as_str();
+    #[cfg(feature = "msvc")]
+    if matches!(language, Language::Cpp | Language::ObjCpp) && crate::is_maybe_msvc(sym) {
+        display_for_split = msvc::strip_display_prefixes(display_for_split);
+    }
+    let (path, mut parameters, mut return_type) = match language {
+        Language::Cpp | Language::ObjCpp => split_cpp_signature(display_for_split),
         _ => split_generic_signature(&display),
     };
     let separator = match language {
         Language::Cpp | Language::ObjCpp | Language::Rust => "::",
         _ => ".",
     };
-    let (namespace, leaf_name, template_args) = parse_path(&path, separator);
-    let kind = classify_kind(sym, language, &display, &namespace, &leaf_name);
+    let (mut namespace, mut leaf_name, template_args) = parse_path(&path, separator);
+    let mut kind = classify_kind(sym, language, &display, &namespace, &leaf_name);
+    let mut is_generic = template_args.is_some();
+
+    // Phase 2: where a backend exposes its parse tree, the AST's kind and
+    // identity fields take precedence over the text-derived ones.
+    #[cfg(feature = "msvc")]
+    if matches!(language, Language::Cpp | Language::ObjCpp) && crate::is_maybe_msvc(sym) {
+        if let Some(ast) = msvc::walk_ast(sym) {
+            kind = ast.kind;
+            namespace = ast.namespace;
+            leaf_name = ast.name;
+            is_generic = ast.is_template || template_args.is_some();
+            // The AST knows where the name ends, so the signature is split
+            // by it instead of by the text heuristics (MSVC names can
+            // contain spaces, as in `` `vector deleting destructor' ``).
+            let (msvc_params, msvc_return) = msvc::split_signature(
+                msvc::strip_display_prefixes(&display),
+                &leaf_name,
+                &namespace,
+            );
+            parameters = msvc_params.or(parameters);
+            return_type = msvc_return.or(return_type);
+        }
+    }
+    #[cfg(feature = "swift")]
+    if matches!(language, Language::Swift) {
+        if let Some(dump) = crate::try_dump_swift(sym) {
+            if let Some(ast) = swift::walk_dump(&dump) {
+                kind = ast.kind;
+                namespace = ast.namespace;
+                if !ast.name.is_empty() {
+                    leaf_name = ast.name;
+                }
+            }
+        }
+    }
 
     Some(DemangledInfo {
         language,
@@ -222,7 +272,7 @@ pub(crate) fn demangle_structured(name: &Name<'_>, opts: DemangleOptions) -> Opt
         parameters,
         return_type,
         hash,
-        is_generic: template_args.is_some(),
+        is_generic,
         template_args,
         mangled: sym.to_string(),
     })
@@ -276,6 +326,15 @@ fn objc_info(sym: &str, language: Language, opts: DemangleOptions) -> DemangledI
 /// `{typeinfo(...)}`, ...) are unwrapped to their inner path first; thunk
 /// forms keep their full rendering as the name.
 fn split_cpp_signature(display: &str) -> (String, Option<Vec<String>>, Option<String>) {
+    // Guard variables and reference temps render as
+    // "<kind> for <enclosing function>()::<name>"; the parenthesized
+    // function in the middle is not a signature of this entity, so the
+    // inner path is taken verbatim.
+    for prefix in ["guard variable for ", "reference temporary for "] {
+        if let Some(inner) = display.strip_prefix(prefix) {
+            return (inner.to_string(), None, None);
+        }
+    }
     if display.starts_with('{') && display.ends_with('}') {
         let inner = &display[1..display.len() - 1];
         for prefix in ["vtable(", "vtt(", "typeinfo name(", "typeinfo("] {
@@ -637,7 +696,7 @@ fn classify_kind(
         // underscores (macOS `__Z`, Windows `___Z`).
         let bare = sym.trim_start_matches('_');
         let prefixed = bare.strip_prefix('Z').unwrap_or(bare);
-        if prefixed.starts_with("TV") || prefixed.starts_with("TT") {
+        if prefixed.starts_with("TV") || prefixed.starts_with("TT") || prefixed.starts_with("TC") {
             return DemangledKind::VirtualTable;
         }
         if prefixed.starts_with("TI") || prefixed.starts_with("TS") {
@@ -645,6 +704,10 @@ fn classify_kind(
         }
         if prefixed.starts_with("Th") || prefixed.starts_with("Tv") {
             return DemangledKind::MethodThunk;
+        }
+        // Guard variables and reference temps of static storage.
+        if prefixed.starts_with("GV") || prefixed.starts_with("GR") {
+            return DemangledKind::StaticVariable;
         }
         if display.starts_with("{vtable(") || display.starts_with("{vtt(") {
             return DemangledKind::VirtualTable;
