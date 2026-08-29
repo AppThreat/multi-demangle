@@ -118,7 +118,7 @@ extern "C" {
 /// ```
 ///
 /// [`Demangle::demangle`]: trait.Demangle.html#tymethod.demangle
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct DemangleOptions {
     return_type: bool,
     parameters: bool,
@@ -419,47 +419,75 @@ fn cpp_like_qualifier_end(demangled: &str, mut idx: usize) -> usize {
 
 /// Locates the function name and signature span in a demangled C++-like string.
 ///
-/// Scans for a `(` that is preceded by something that looks like a function name
-/// (not a bare type keyword, not empty). On success returns the function name,
-/// the byte index of the opening `(`, and the byte index just past the closing
-/// `)` including any trailing qualifiers.
+/// Scans for a `(` at angle-bracket depth zero — a `(` inside `<...>`
+/// belongs to a template argument's type (`function_ref<void ()>`), not to
+/// the signature — that is preceded by something that looks like a function
+/// name (not a bare type keyword, not empty). On success returns the
+/// function name, the byte index of the opening `(`, and the byte index
+/// just past the closing `)` including any trailing qualifiers.
 pub(crate) fn analyze_cpp_like_signature(demangled: &str) -> Option<(String, usize, usize)> {
+    let mut angle_depth = 0usize;
     for (idx, ch) in demangled.char_indices() {
-        if ch != '(' {
-            continue;
-        }
+        match ch {
+            '<' => angle_depth = angle_depth.saturating_add(1),
+            '>' => angle_depth = angle_depth.saturating_sub(1),
+            '(' if angle_depth == 0 => {
+                // The call operator renders its own empty pair as part of
+                // the name: `operator()(args)` — the parameter list is the
+                // second pair.
+                let idx = if demangled[idx..].starts_with("()(") {
+                    idx + 2
+                } else {
+                    idx
+                };
 
-        let prefix = demangled[..idx].trim_end();
-        let candidate = trim_cpp_like_name_prefix(prefix);
-        // Skip candidate "names" that are actually return types (e.g. "void") or
-        // artifacts of operator/template syntax without a proper identifier.
-        if candidate.is_empty()
-            || is_cpp_like_type_keyword(&candidate)
-            || !prefix.ends_with(&candidate)
-        {
-            continue;
-        }
+                let prefix = demangled[..idx].trim_end();
+                let candidate = trim_cpp_like_name_prefix(prefix);
+                // Skip candidate "names" that are actually return types (e.g. "void") or
+                // artifacts of operator/template syntax without a proper identifier.
+                if candidate.is_empty()
+                    || is_cpp_like_type_keyword(&candidate)
+                    || !prefix.ends_with(&candidate)
+                {
+                    continue;
+                }
 
-        let params_end = matching_paren_end(demangled, idx)?;
-        let signature_end = cpp_like_qualifier_end(demangled, params_end);
-        return Some((candidate, idx, signature_end));
+                let params_end = matching_paren_end(demangled, idx)?;
+                let signature_end = cpp_like_qualifier_end(demangled, params_end);
+                return Some((candidate, idx, signature_end));
+            }
+            _ => {}
+        }
     }
 
     None
 }
 
-/// Extracts the last whitespace-separated token of a signature prefix, which is
-/// the function name when a return type is present. `operator ...` names are
-/// kept verbatim since they legitimately contain spaces.
+/// Extracts the function name from a signature prefix: everything after the
+/// last space that sits outside any `<...>` group. Spaces inside template
+/// arguments (`function_ref<void ()>`) do not separate a return type from
+/// the name, and `operator ...` names are kept verbatim since they
+/// legitimately contain spaces.
 fn trim_cpp_like_name_prefix(prefix: &str) -> String {
     let prefix = prefix.trim();
     if prefix.starts_with("operator ") {
         return prefix.to_string();
     }
 
-    match prefix.rsplit_once(' ') {
-        Some((_, tail)) if !tail.is_empty() => tail.to_string(),
-        _ => prefix.to_string(),
+    let mut depth = 0usize;
+    let mut last_top_level_space = None;
+    for (idx, ch) in prefix.char_indices() {
+        match ch {
+            '<' => depth = depth.saturating_add(1),
+            '>' => depth = depth.saturating_sub(1),
+            ' ' if depth == 0 => last_top_level_space = Some(idx),
+            _ => {}
+        }
+    }
+
+    match last_top_level_space {
+        Some(pos) => prefix[pos + 1..].to_string(),
+        None => prefix.to_string(),
     }
 }
 
@@ -1153,7 +1181,7 @@ mod multi_demangle {
         looks_mangled as looks_mangled_impl, normalize_or_borrow, Decoration, Demangle,
         DemangleOptions, DemangledInfo as StructuredInfo, Name, Normalizer, SymbolStatus,
     };
-    use pyo3::exceptions::PyTypeError;
+    use pyo3::exceptions::{PyTypeError, PyValueError};
     use pyo3::prelude::*;
     use pyo3::types::{PyAny, PyDict, PyList, PyString};
     use std::borrow::Cow;
@@ -1607,14 +1635,22 @@ mod multi_demangle {
     /// leaf name, kind, parameters, return type, generics, and hash.
     ///
     /// Returns `None` when the symbol is not mangled in any known scheme.
-    /// The optional `options` argument behaves like `demangle_symbol`'s.
+    /// The optional `options` argument behaves like `demangle_symbol`'s,
+    /// except `normalize=True` is rejected: normalization only applies when
+    /// demangling fails, and a failed demangling has no structure to
+    /// return — use `demangle_symbol` for normalized strings.
     #[pyfunction]
     #[pyo3(signature = (mangled, options = None))]
     fn demangle_symbol_structured(
         mangled: &str,
         options: Option<PyDemangleOptions>,
     ) -> PyResult<Option<PyDemangledInfo>> {
-        let (opts, _normalize) = resolve_options(options);
+        let (opts, normalize) = resolve_options(options);
+        if normalize {
+            return Err(PyValueError::new_err(
+                "normalize is not supported by demangle_symbol_structured;                  use demangle_symbol for normalized string output",
+            ));
+        }
         match Name::from(mangled).demangle_structured(opts) {
             Some(info) => Ok(Some(PyDemangledInfo {
                 info,

@@ -77,7 +77,9 @@ pub struct DemangledInfo {
     /// Generic/template argument renderings found in the path, in path
     /// order (`Vec<u8>` contributes `"u8"`).
     pub template_args: Option<Vec<String>>,
-    /// True when the name carries generic/template arguments.
+    /// True when the name carries generic/template arguments; the argument
+    /// renderings live in `template_args` when the backend provides them
+    /// (an MSVC scope template sets this flag without renderings).
     pub is_generic: bool,
     /// The original mangled symbol.
     pub mangled: String,
@@ -201,9 +203,14 @@ pub(crate) fn demangle_structured(name: &Name<'_>, opts: DemangleOptions) -> Opt
     }
 
     let display = name.demangle(opts)?;
-    let simple = name
-        .demangle(DemangleOptions::name_only())
-        .unwrap_or_else(|| display.clone());
+    // Name-only options already produce the simple rendering; skip the
+    // second demangling pass otherwise required per symbol.
+    let simple = if opts == DemangleOptions::name_only() {
+        display.clone()
+    } else {
+        name.demangle(DemangleOptions::name_only())
+            .unwrap_or_else(|| display.clone())
+    };
 
     let hash = capture_hash(sym, language);
 
@@ -738,7 +745,17 @@ fn classify_kind(
     }
 
     if name.starts_with("__") || (namespace.is_empty() && name.starts_with('_')) {
+        // Known limitation: this also matches deliberately underscore-prefixed
+        // C++ names (`__cxxabiv1::__class_type_info`); the vtable/typeinfo
+        // prefix checks above already handle the compiler-internal forms.
         return DemangledKind::Intrinsic;
+    }
+
+    // C++ member operators (`operator()`, `operator<`, ...) are methods
+    // regardless of the owner's casing; the template-heavy owners they
+    // appear on (`function_ref<void ()>`) often are not CamelCase.
+    if !namespace.is_empty() && name.starts_with("operator") {
+        return DemangledKind::Method;
     }
 
     // A CamelCase penultimate segment indicates a method on a type.

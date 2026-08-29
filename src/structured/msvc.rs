@@ -42,7 +42,7 @@ pub(super) fn walk_ast(sym: &str) -> Option<MsvcAst> {
         _ => DemangledKind::Function,
     };
 
-    let namespace: Vec<String> = parsed
+    let mut namespace: Vec<String> = parsed
         .symbol
         .scope
         .names
@@ -90,6 +90,13 @@ pub(super) fn walk_ast(sym: &str) -> Option<MsvcAst> {
                     name = stripped.to_string();
                     break;
                 }
+            }
+            // The rendered descriptor name carries the qualified type
+            // (`Bar::`RTTI Type Descriptor'`); move the path into the
+            // namespace so the leaf name is just the descriptor.
+            if let Some(pos) = name.rfind("::") {
+                namespace.push(name[..pos].to_string());
+                name = name[pos + 2..].to_string();
             }
         }
         Name::Operator(Operator::VFTable) => kind = DemangledKind::VirtualTable,
@@ -232,7 +239,9 @@ fn split_params(text: &str) -> Vec<String> {
         }
     }
     parts.push(text[start..].trim().to_string());
-    if parts.len() == 1 && parts[0].is_empty() {
+    if parts.len() == 1 && (parts[0].is_empty() || parts[0] == "void") {
+        // A lone `void` parameter is C++ for "no parameters" — normalize to
+        // the same shape Itanium's empty list produces.
         parts.clear();
     }
     parts

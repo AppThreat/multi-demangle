@@ -137,6 +137,17 @@ def test_phase2_itanium_guard_variable():
     assert d["name"] == "mutex"
 
 
+def test_normalize_is_rejected_explicitly():
+    # Normalization only applies when demangling fails, and a failed
+    # demangling has no structure to return — reject instead of silently
+    # ignoring the flag.
+    with pytest.raises(ValueError):
+        multi_demangle.demangle_symbol_structured(
+            "_ZN3foo3barEv",
+            options=multi_demangle.DemangleOptions(normalize=True),
+        )
+
+
 def test_unmangled_input_returns_none():
     assert multi_demangle.demangle_symbol_structured("libc.so.6") is None
 

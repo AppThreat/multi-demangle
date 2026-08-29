@@ -123,6 +123,11 @@ Itanium kinds come from the mangling grammar's own prefixes (`_ZGV` guard
 variables, `_ZTV`/`_ZTC` vtables, `_ZTh`/`_ZTv` thunks). Text-derived
 extraction remains the fallback for every language.
 
+One stated Itanium limitation: thunk symbols (`_ZTh`/`_ZTv`) classify with
+the right kind, but their target identity is not extracted — the leaf name
+stays the full brace rendering (`{virtual override thunk(...)}`) since the
+demangled form is descriptive and no Itanium AST is available to walk.
+
 ### Symbol hygiene
 
 On top of demangling, the crate provides cheap, prefix-based helpers for the

@@ -152,6 +152,22 @@ fn cpp_template_function() {
 }
 
 #[test]
+fn cpp_template_arg_with_function_type() {
+    // The call operator of llvm::function_ref<void ()>: the ( inside the
+    // template argument must not be taken for the signature.
+    let info = structured("_ZNK4llvm12function_refIFvvEEclEv");
+    assert_eq!(
+        info.display,
+        "llvm::function_ref<void ()>::operator()() const"
+    );
+    assert_eq!(info.namespace, ["llvm", "function_ref<void ()>"]);
+    assert_eq!(info.name, "operator()");
+    assert_eq!(info.kind, DemangledKind::Method);
+    assert_eq!(info.parameters, Some(Vec::new()));
+    assert_eq!(info.return_type, None);
+}
+
+#[test]
 fn cpp_constructor_and_method() {
     let ctor = structured("_ZN3FooC1Ev");
     assert_eq!(ctor.name, "Foo");
@@ -174,6 +190,13 @@ fn cpp_vtable_typeinfo_and_thunks() {
 
     let thunk = structured("_ZThn8_N3foo3barEv");
     assert_eq!(thunk.kind, DemangledKind::MethodThunk);
+    // Known limitation: without a reachable Itanium AST the thunk's target
+    // identity is not extracted — the name stays the full brace rendering
+    // ({virtual override thunk(...)}), only the kind is classified.
+    assert_eq!(
+        thunk.name,
+        "{virtual override thunk({offset(-8)}, foo::bar())}"
+    );
 
     // Typeinfo symbols do not demangle in this cpp_demangle version, so the
     // structured API declines them just like `demangle` does.
@@ -306,7 +329,9 @@ fn msvc_vftable_and_rtti_kinds() {
 
     let rtti = structured("??_R0?AVBar@@@8");
     assert_eq!(rtti.kind, DemangledKind::TypeInfo);
-    assert_eq!(rtti.name, "Bar::`RTTI Type Descriptor'");
+    // The qualified type moves to the namespace; the leaf is the descriptor.
+    assert_eq!(rtti.namespace, ["Bar"]);
+    assert_eq!(rtti.name, "`RTTI Type Descriptor'");
 }
 
 #[test]
@@ -315,9 +340,10 @@ fn msvc_ctor_dtor_identity() {
     assert_eq!(ctor.kind, DemangledKind::Method);
     assert_eq!(ctor.namespace, ["Bar"]);
     assert_eq!(ctor.name, "Bar");
-    // Access specifiers are not return types.
+    // Access specifiers are not return types, and a lone `void` parameter
+    // list normalizes to the same empty shape Itanium produces.
     assert_eq!(ctor.return_type, None);
-    assert_eq!(ctor.parameters, Some(vec!["void".to_string()]));
+    assert_eq!(ctor.parameters, Some(Vec::new()));
 
     let dtor = structured("??1Bar@@QEAA@XZ");
     assert_eq!(dtor.kind, DemangledKind::Method);
@@ -334,7 +360,7 @@ fn msvc_thunk_signature_split() {
     assert_eq!(thunk.kind, DemangledKind::MethodThunk);
     assert_eq!(thunk.namespace, ["Bar"]);
     assert_eq!(thunk.return_type.as_deref(), Some("void"));
-    assert_eq!(thunk.parameters, Some(vec!["void".to_string()]));
+    assert_eq!(thunk.parameters, Some(Vec::new()));
 }
 
 #[test]
@@ -343,7 +369,10 @@ fn msvc_template_member() {
     assert_eq!(info.kind, DemangledKind::Method);
     assert_eq!(info.namespace, ["Vec<int>"]);
     assert_eq!(info.name, "fn");
+    // The scope template sets is_generic, and the rendered path keeps the
+    // argument rendering in template_args.
     assert!(info.is_generic);
+    assert_eq!(info.template_args, Some(vec!["int".to_string()]));
     assert_eq!(info.return_type.as_deref(), Some("void"));
 }
 
