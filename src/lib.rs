@@ -454,7 +454,11 @@ pub(crate) fn analyze_cpp_like_signature(demangled: &str) -> Option<(String, usi
                 let candidate = trim_cpp_like_name_prefix(prefix);
                 // Skip candidate "names" that are actually return types (e.g. "void") or
                 // artifacts of operator/template syntax without a proper identifier.
+                // A candidate ending in `::` is a path prefix, not a name —
+                // this is the parenthesized component of a nested
+                // `(anonymous namespace)::(anonymous namespace)::f` path.
                 if candidate.is_empty()
+                    || candidate.ends_with("::")
                     || is_cpp_like_type_keyword(&candidate)
                     || !prefix.ends_with(&candidate)
                 {
@@ -498,28 +502,53 @@ pub(crate) fn operator_angle_token_len(text: &str, idx: usize) -> Option<usize> 
 }
 
 /// Extracts the function name from a signature prefix: everything after the
-/// last space that sits outside any `<...>` group. Spaces inside template
-/// arguments (`function_ref<void ()>`) do not separate a return type from
-/// the name, and `operator ...` names are kept verbatim since they
-/// legitimately contain spaces.
+/// last space that separates a return type from the name.
+///
+/// The name sits at the end of the prefix, so only spaces at the prefix's
+/// own parenthesis depth can precede it — spaces inside a parenthesized
+/// path component (`(anonymous namespace)::f`) are deeper and belong to the
+/// component, while a function returning a function pointer puts the name
+/// *inside* a group (`void (* BareFn(...))(...)`) and its separating space
+/// is at that deeper level. Spaces inside template arguments
+/// (`function_ref<void ()>`) never separate anything, operator tokens are
+/// depth-neutral (see [`operator_angle_token_len`]), and `operator ...`
+/// names are kept verbatim since they legitimately contain spaces.
 fn trim_cpp_like_name_prefix(prefix: &str) -> String {
     let prefix = prefix.trim();
     if prefix.starts_with("operator ") {
         return prefix.to_string();
     }
 
-    let mut depth = 0usize;
-    let mut top_level_spaces = Vec::new();
-    for (idx, ch) in prefix.char_indices() {
+    let mut angle_depth = 0usize;
+    let mut paren_depth = 0usize;
+    // Byte offsets of the candidate spaces, each with the paren depth it
+    // sits at; the depth the name lives at is the prefix's final depth.
+    let mut spaces: Vec<(usize, usize)> = Vec::new();
+    let mut idx = 0usize;
+    while idx < prefix.len() {
+        if let Some(token_len) = operator_angle_token_len(prefix, idx) {
+            idx += token_len;
+            continue;
+        }
+        let ch = prefix[idx..].chars().next().expect("non-empty remainder");
         match ch {
-            '<' => depth = depth.saturating_add(1),
-            '>' => depth = depth.saturating_sub(1),
-            ' ' if depth == 0 => top_level_spaces.push(idx),
+            '<' => angle_depth = angle_depth.saturating_add(1),
+            '>' => angle_depth = angle_depth.saturating_sub(1),
+            '(' => paren_depth = paren_depth.saturating_add(1),
+            ')' => paren_depth = paren_depth.saturating_sub(1),
+            ' ' if angle_depth == 0 => spaces.push((idx, paren_depth)),
             _ => {}
         }
+        idx += ch.len_utf8();
     }
+    let name_depth = paren_depth;
+    let mut top_level_spaces: Vec<usize> = spaces
+        .into_iter()
+        .filter(|&(_, depth)| depth == name_depth)
+        .map(|(pos, _)| pos)
+        .collect();
 
-    // The last top-level space usually separates the return type from the
+    // The last such space usually separates the return type from the
     // name — but a space directly before template arguments continues an
     // operator name (`operator< <int>`), so step back one space.
     let mut candidate_space = top_level_spaces.pop();

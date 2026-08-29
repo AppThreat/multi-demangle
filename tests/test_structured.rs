@@ -191,6 +191,38 @@ fn cpp_shift_and_comparison_operators() {
 }
 
 #[test]
+fn cpp_anonymous_namespace_components() {
+    // `(anonymous namespace)` is one path component, not a parameter list
+    // and not a space-separated return type: the spaces inside it are not
+    // top level, and the parenthesized group is not a signature.
+    let anon = structured("__ZN12_GLOBAL__N_113compEnumNamesIhEEbRKN4llvm9EnumEntryIT_EES6_");
+    assert_eq!(anon.namespace, ["(anonymous namespace)"]);
+    assert_eq!(anon.name, "compEnumNames");
+    assert_eq!(anon.return_type.as_deref(), Some("bool"));
+    assert_eq!(anon.template_args, Some(vec!["unsigned char".to_string()]));
+
+    // Nested anonymous namespaces: a candidate name ending in `::` is a
+    // path prefix, so neither group is mistaken for the parameter list.
+    let nested = structured(
+        "__ZN12_GLOBAL__N_112_GLOBAL__N_119ProtocolMethodLists3getEPKN5clang16ObjCProtocolDeclE",
+    );
+    assert_eq!(
+        nested.namespace,
+        [
+            "(anonymous namespace)",
+            "(anonymous namespace)",
+            "ProtocolMethodLists"
+        ]
+    );
+    assert_eq!(nested.name, "get");
+    assert_eq!(nested.kind, DemangledKind::Method);
+    assert_eq!(
+        nested.parameters,
+        Some(vec!["clang::ObjCProtocolDecl const*".to_string()])
+    );
+}
+
+#[test]
 fn cpp_free_operators_are_not_methods() {
     // A free operator in a namespace: the owner is not a type, so the
     // owner-shape predicate must not fire on the leaf's "operator" prefix.
