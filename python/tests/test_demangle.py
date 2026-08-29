@@ -5,47 +5,47 @@ swift_test_cases = [
     (
         "$S8mangling12any_protocolyyypF",
         "mangling.any_protocol(Any) -> ()",
-        "any_protocol",
+        "any_protocol(_:)",
     ),
     (
         "$S8mangling12one_protocolyyAA3Foo_pF",
         "mangling.one_protocol(mangling.Foo) -> ()",
-        "one_protocol",
+        "one_protocol(_:)",
     ),
     (
         "$S8mangling12GenericUnionO3FooyACyxGSicAEmlF",
         "mangling.GenericUnion.Foo<A>(mangling.GenericUnion<A>.Type) -> (Swift.Int) -> mangling.GenericUnion<A>",
-        "GenericUnion.Foo<A>",
+        "GenericUnion.Foo<A>(_:)",
     ),
     (
         "$s8mangling12GenericUnionO3FooyACyxGSicAEmlF",
         "mangling.GenericUnion.Foo<A>(mangling.GenericUnion<A>.Type) -> (Swift.Int) -> mangling.GenericUnion<A>",
-        "GenericUnion.Foo<A>",
+        "GenericUnion.Foo<A>(_:)",
     ),
     (
         "$s8mangling14varargsVsArray3arr1nySid_SStF",
         "mangling.varargsVsArray(arr: Swift.Int..., n: Swift.String) -> ()",
-        "varargsVsArray",
+        "varargsVsArray(arr:n:)",
     ),
     (
         "$s7example1fyyYaF",
         "example.f() async -> ()",
-        "f"
+        "f()",
     ),
     (
         "$s17distributed_thunk2DAC1fyyFTE",
         "distributed thunk distributed_thunk.DA.f() -> ()",
-        "DA.f"
+        "DA.f()",
     ),
     (
         "$s4main20receiveInstantiationyySo34__CxxTemplateInst12MagicWrapperIiEVzF",
         "main.receiveInstantiation(inout __C.__CxxTemplateInst12MagicWrapperIiE) -> ()",
-        "receiveInstantiation"
+        "receiveInstantiation(_:)",
     ),
     (
         "$s4diff1hyyS2iYjlXEF",
         "diff.h(@differentiable(_linear) (Swift.Int) -> Swift.Int) -> ()",
-        "h"
+        "h(_:)"
     )
 ]
 

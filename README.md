@@ -12,7 +12,7 @@ Currently supported languages are:
 | C++         | Itanium ABI (GCC, Clang), GNU v2, CodeWarrior, and MSVC    | `cpp`, `gnuv2`, `codewarrior`, `msvc` |
 | Rust        | Both `legacy` and `v0` schemes                             | `rust`          |
 | Scala Native| Via the unknown-language fallback (symbols prefixed `_SM`) | `scala-native`  |
-| Swift       | Up to Swift 6.3, using a vendored Swift demangler          | `swift`         |
+| Swift       | Up to Swift 6.3.3, using a vendored Swift demangler        | `swift`         |
 | ObjC        | Symbol detection only (selectors are already readable)     | always on       |
 
 All of the above features are enabled by default. Disabling them trims the
@@ -423,6 +423,34 @@ cargo bench
 The Swift demangler is a minimal subset of the Swift standard library sources
 vendored under `vendor/swift`; see [vendor/swift/README.md](vendor/swift/README.md)
 for how it is maintained.
+
+### Updating the vendored Swift demangler
+
+A single command syncs `vendor/swift` from upstream (shallow, blobless, sparse
+clones), auto-adds headers new to the demangler's dependency graph, records
+provenance in `vendor/swift/SYNC.md`, and runs the validation gauntlet
+(`cargo test --all-features`, the Python tests, and an ASan/UBSan pass over
+the real-symbol corpus):
+
+```
+scripts/sync-swift.sh                # newest swift-*-RELEASE tag
+scripts/sync-swift.sh swift-6.4.0    # or an explicit tag
+```
+
+A monthly CI workflow (`swift-sync-reminder`) opens an issue listing upstream
+commits that touch `lib/Demangling` or `include/swift/Demangling` since the
+last sync, so the vendored subset never rots silently.
+
+The supported-version claim above is backed by per-toolchain corpus snapshots:
+`scripts/collect-swift-corpus.sh` compiles a fixture with a concrete Swift
+toolchain (pass its `swiftc` to represent another one) into
+`tests/corpus/swift/<version>/`, and the `swift_corpus` test pins the exact
+rendering. After a sync that changes output, regenerate snapshots deliberately
+and review the diff — downstream consumers (blint) match on these strings:
+
+```
+MULTI_DEMANGLE_UPDATE_SNAPSHOTS=1 cargo test --all-features --test test_swift_corpus
+```
 
 ## License
 

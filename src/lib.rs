@@ -5,7 +5,7 @@
 //! - C++ (Itanium, GNU v2, CodeWarrior, and MSVC) (`features = ["cpp", "gnuv2", "codewarrior", "msvc"]`)
 //! - Rust (both `legacy` and `v0`) (`features = ["rust"]`)
 //! - Scala Native via the unknown-language fallback (`features = ["scala-native"]`)
-//! - Swift (up to Swift 6.3) (`features = ["swift"]`)
+//! - Swift (up to Swift 6.3.3) (`features = ["swift"]`)
 //! - ObjC (only symbol detection)
 //!
 //! As the demangling schemes for the languages are different, the supported demangling features are
@@ -67,13 +67,19 @@ pub use structured::{DemangledInfo, DemangledKind};
 
 // Feature flags forwarded over FFI to the vendored Swift demangler in `src/swiftdemangle.cpp`.
 // The values must stay in sync with the `SYMBOLIC_SWIFT_FEATURE_*` defines in that file.
+//
+// Parity note (checked per sync in `vendor/swift/SYNC.md`): upstream removed
+// `ShowFunctionReturnType` at Swift 6.3, so a return type prints whenever
+// argument types do; `return_type(false)` with `parameters(true)` can no
+// longer suppress `-> T`.
 #[cfg(feature = "swift")]
 const SYMBOLIC_SWIFT_FEATURE_RETURN_TYPE: c_int = 0x1;
 #[cfg(feature = "swift")]
 const SYMBOLIC_SWIFT_FEATURE_PARAMETERS: c_int = 0x2;
 
 // Thin C ABI over the vendored Swift standard library demangler, compiled by `build.rs`.
-// Both functions return 0 on failure and non-zero on success.
+// Both worker functions return 0 on failure, the positive byte count (with NUL)
+// on success, or the negative required buffer size when the output did not fit.
 #[cfg(feature = "swift")]
 extern "C" {
     /// Demangles a Swift symbol into the provided buffer, honoring the feature flags.
@@ -89,6 +95,56 @@ extern "C" {
 
     /// Writes the demangler's node-tree dump for the symbol into the buffer.
     fn multi_demangle_swift_dump(sym: *const c_char, buf: *mut c_char, buf_len: usize) -> c_int;
+}
+
+/// First output-buffer size tried for Swift demangling; enough for the vast
+/// majority of symbols without over-allocating per call.
+#[cfg(feature = "swift")]
+const SWIFT_BUFFER_INITIAL: usize = 4096;
+
+/// Hard cap on Swift demangling output. Long closure chains in real iOS apps
+/// exceed the previous fixed 4 KiB buffer, but a bound must survive so a
+/// crafted symbol cannot balloon memory (the same reason the C++ path keeps
+/// its `BoundedString`).
+#[cfg(feature = "swift")]
+const SWIFT_BUFFER_MAX: usize = 1024 * 1024;
+
+/// First size of the per-thread node-dump scratch buffer. Dumps are far more
+/// verbose than the string rendering, so this starts well above
+/// [`SWIFT_BUFFER_INITIAL`] to keep the common case at a single FFI call.
+#[cfg(feature = "swift")]
+const SWIFT_DUMP_BUFFER_INITIAL: usize = 64 * 1024;
+
+/// Calls `demangle_fn` into `buffer`, growing it once when the C side reports
+/// the required size through the negative-return protocol. Returns `None` when
+/// the call fails or the required size exceeds [`SWIFT_BUFFER_MAX`].
+///
+/// `buffer` is borrowed so callers can reuse a scratch allocation across calls;
+/// on success it holds a NUL-terminated string written by the C side.
+#[cfg(feature = "swift")]
+fn swift_call_growing(
+    buffer: &mut Vec<c_char>,
+    demangle_fn: impl Fn(*mut c_char, usize) -> c_int,
+) -> Option<String> {
+    let mut written = demangle_fn(buffer.as_mut_ptr(), buffer.len());
+    if written < 0 {
+        let required = written.unsigned_abs() as usize;
+        if required > SWIFT_BUFFER_MAX {
+            return None;
+        }
+        buffer.resize(required, 0);
+        written = demangle_fn(buffer.as_mut_ptr(), buffer.len());
+    }
+    if written <= 0 {
+        return None;
+    }
+    // SAFETY: a positive return means the C side wrote a NUL-terminated string
+    // of `written` bytes (terminator included) into the buffer.
+    Some(
+        unsafe { CStr::from_ptr(buffer.as_ptr()) }
+            .to_string_lossy()
+            .into_owned(),
+    )
 }
 
 /// Options for [`Demangle::demangle`].
@@ -110,7 +166,7 @@ extern "C" {
 /// let symbol = Name::new("$s8mangling12GenericUnionO3FooyACyxGSicAEmlF", NameMangling::Mangled, Language::Swift);
 ///
 /// let simple = symbol.demangle(DemangleOptions::name_only()).unwrap();
-/// assert_eq!(&simple, "GenericUnion.Foo<A>");
+/// assert_eq!(&simple, "GenericUnion.Foo<A>(_:)");
 ///
 /// let full = symbol.demangle(DemangleOptions::complete()).unwrap();
 /// assert_eq!(&full, "mangling.GenericUnion.Foo<A>(mangling.GenericUnion<A>.Type) -> (Swift.Int) -> mangling.GenericUnion<A>");
@@ -709,15 +765,15 @@ fn try_demangle_rust(_ident: &str, _opts: DemangleOptions) -> Option<String> {
 /// Demangles Swift symbols through the vendored Swift demangler (see
 /// `src/swiftdemangle.cpp`), passing the requested options as feature flags.
 ///
-/// The output is written into a fixed 4 KiB buffer; symbols whose demangled form
-/// does not fit are rejected rather than truncated.
+/// The output starts in a 4 KiB buffer; when the C side reports the required
+/// size the call grows once and retries, so long real-world symbols (nested
+/// closure chains, very wide signatures) demangle instead of being dropped.
+/// Output stays bounded by [`SWIFT_BUFFER_MAX`]; anything larger is rejected
+/// rather than truncated.
 #[cfg(feature = "swift")]
 fn try_demangle_swift(ident: &str, opts: DemangleOptions) -> Option<String> {
-    let mut buf = vec![0; 4096];
-    let sym = match CString::new(ident) {
-        Ok(sym) => sym,
-        Err(_) => return None,
-    };
+    let mut buffer = vec![0; SWIFT_BUFFER_INITIAL];
+    let sym = CString::new(ident).ok()?;
 
     let mut features = 0;
     if opts.return_type {
@@ -727,12 +783,9 @@ fn try_demangle_swift(ident: &str, opts: DemangleOptions) -> Option<String> {
         features |= SYMBOLIC_SWIFT_FEATURE_PARAMETERS;
     }
 
-    unsafe {
-        match multi_demangle_swift(sym.as_ptr(), buf.as_mut_ptr(), buf.len(), features) {
-            0 => None,
-            _ => Some(CStr::from_ptr(buf.as_ptr()).to_string_lossy().to_string()),
-        }
-    }
+    swift_call_growing(&mut buffer, |buf, len| unsafe {
+        multi_demangle_swift(sym.as_ptr(), buf, len, features)
+    })
 }
 
 #[cfg(not(feature = "swift"))]
@@ -744,39 +797,30 @@ fn try_demangle_swift(_ident: &str, _opts: DemangleOptions) -> Option<String> {
 /// exposes declaration structure (node kinds, modules, type contexts) that
 /// the string rendering does not.
 ///
-/// The dump buffer is a per-thread scratch allocation reserved once and
-/// reused across calls, so structured mode never re-zeroes 64 KiB per
-/// symbol. A dump that does not fit is rejected (`None`), which callers
-/// treat as the signal to fall back to text-derived extraction.
+/// The dump buffer is a per-thread scratch allocation reused across calls, so
+/// structured mode allocates once per thread rather than once per symbol. Like
+/// the string path, a dump that does not fit grows once to the reported size;
+/// anything over [`SWIFT_BUFFER_MAX`] is rejected (`None`), which callers treat
+/// as the signal to fall back to text-derived extraction.
 #[cfg(feature = "swift")]
 pub(crate) fn try_dump_swift(sym: &str) -> Option<String> {
     use std::cell::RefCell;
 
     thread_local! {
-        /// Scratch buffer for node dumps; capacity is reserved without
-        /// zero-filling and the C side always writes a NUL terminator.
+        /// Scratch buffer for node dumps; the C side always writes a NUL
+        /// terminator, so only `len` bytes are ever handed out.
         static DUMP_BUFFER: RefCell<Vec<c_char>> = const { RefCell::new(Vec::new()) };
     }
 
     let cstr = CString::new(sym).ok()?;
     DUMP_BUFFER.with(|cell| {
         let mut buffer = cell.borrow_mut();
-        if buffer.capacity() == 0 {
-            buffer.reserve(64 * 1024);
+        if buffer.is_empty() {
+            buffer.resize(SWIFT_DUMP_BUFFER_INITIAL, 0);
         }
-        let ok = unsafe {
-            // Write into the vec's unused allocation; `spare_capacity_mut`
-            // is the sanctioned view of it (len stays 0, C writes the NUL).
-            let spare = buffer.spare_capacity_mut();
-            multi_demangle_swift_dump(cstr.as_ptr(), spare.as_mut_ptr().cast(), spare.len())
-        };
-        if ok == 0 {
-            return None;
-        }
-        let dumped = unsafe { CStr::from_ptr(buffer.as_ptr()) }
-            .to_string_lossy()
-            .into_owned();
-        Some(dumped)
+        swift_call_growing(&mut buffer, |buf, len| unsafe {
+            multi_demangle_swift_dump(cstr.as_ptr(), buf, len)
+        })
     })
 }
 

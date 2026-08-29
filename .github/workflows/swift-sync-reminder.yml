@@ -1,0 +1,113 @@
+# Monthly reminder that the vendored Swift demangler subset (vendor/swift) may
+# be behind upstream. Opens (at most one) issue listing the commits that
+# touched the demangler sources since the last sync recorded in
+# vendor/swift/SYNC.md. The sync itself stays opportunistic — this only makes
+# sure it is never silent.
+name: swift-sync-reminder
+
+on:
+  schedule:
+    # 1st of every month, well outside the nightly-cron rush.
+    - cron: '23 6 1 * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  upstream-diff:
+    name: Report upstream Swift demangler changes
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+
+      - name: Read the last sync point from vendor/swift/SYNC.md
+        id: last-sync
+        run: |
+          set -euo pipefail
+          sync_doc=vendor/swift/SYNC.md
+          if [ ! -f "$sync_doc" ]; then
+            echo "ref=" >> "$GITHUB_OUTPUT"
+            echo "date=" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          # The sync script keeps exactly one metadata block (the latest sync).
+          echo "ref=$(sed -n 's/^swift-ref: //p' "$sync_doc" | tail -1)" >> "$GITHUB_OUTPUT"
+          echo "date=$(sed -n 's/^date: //p' "$sync_doc" | tail -1)" >> "$GITHUB_OUTPUT"
+
+      - name: Resolve the newest upstream release tag
+        id: latest-tag
+        run: |
+          set -euo pipefail
+          latest="$(git ls-remote --tags https://github.com/apple/swift.git \
+            | sed -n 's#.*refs/tags/\(swift-[0-9.]*-RELEASE\)$#\1#p' \
+            | sort -V | tail -1)"
+          echo "tag=$latest" >> "$GITHUB_OUTPUT"
+          echo "Newest Swift release tag: $latest"
+
+      - name: List upstream demangler commits since the last sync
+        run: |
+          set -euo pipefail
+          last_date="${{ steps.last-sync.outputs.date }}"
+          : > /tmp/demangling-commits.txt
+          shallow_args=(--filter=blob:none --no-checkout --branch main)
+          # Prefer a date-bounded shallow fetch; fall back to a depth cap when
+          # SYNC.md is missing or its date is unusable. A repo with no commits
+          # in the window makes `git clone --shallow-since` fail — that is the
+          # quiet-month happy path, not an error, so treat it as "nothing new".
+          if [ -n "$last_date" ]; then
+            shallow_args+=(--shallow-since="$last_date")
+          else
+            shallow_args+=(--depth=1000)
+          fi
+          if ! git clone "${shallow_args[@]}" https://github.com/apple/swift.git /tmp/upstream; then
+            echo "No upstream commits since ${last_date:-<unknown>}; nothing to report."
+            exit 0
+          fi
+          git -C /tmp/upstream log --no-merges --oneline \
+            -- lib/Demangling include/swift/Demangling > /tmp/demangling-commits.txt
+          echo "Commits touching lib/Demangling or include/swift/Demangling since ${last_date:-<unknown>}: $(wc -l < /tmp/demangling-commits.txt)"
+
+      - name: Open a reminder issue when upstream moved
+        env:
+          GH_TOKEN: ${{ github.token }}
+          LAST_REF: ${{ steps.last-sync.outputs.ref }}
+          LAST_DATE: ${{ steps.last-sync.outputs.date }}
+          NEWEST_TAG: ${{ steps.latest-tag.outputs.tag }}
+        run: |
+          set -euo pipefail
+          if ! [ -s /tmp/demangling-commits.txt ]; then
+            echo "No upstream demangler commits since the last sync; nothing to report."
+            exit 0
+          fi
+          title="Swift demangler upstream sync due"
+          label="swift-sync"
+          # Label filtering is exact and immediate; `--search in:title` goes
+          # through GitHub's search index, which lags issue creation and would
+          # let a manual re-run open a duplicate.
+          gh label create "$label" --description "Vendored Swift demangler sync reminders" --color ededed 2>/dev/null || true
+          if [ "$(gh issue list --state open --label "$label" --json number --jq 'length')" -gt 0 ]; then
+            echo "An open reminder issue already exists; not duplicating it."
+            exit 0
+          fi
+          {
+            echo "Upstream Swift moved under the vendored demangler since the last sync:"
+            echo
+            echo "- Last synced ref: \`${LAST_REF:-unknown (no SYNC.md entry)}\` (${LAST_DATE:-unknown date})"
+            echo "- Newest upstream release tag: \`${NEWEST_TAG}\`"
+            echo "- Commits touching \`lib/Demangling\` or \`include/swift/Demangling\` since the last sync:"
+            echo
+            echo '```'
+            cat /tmp/demangling-commits.txt
+            echo '```'
+            echo
+            echo "Run \`scripts/sync-swift.sh\` to refresh \`vendor/swift\` (records provenance in"
+            echo "\`vendor/swift/SYNC.md\` and runs the validation gauntlet), then review the"
+            echo "corpus snapshots before releasing."
+            echo
+            echo "This issue is opened monthly by the \`swift-sync-reminder\` workflow."
+          } > /tmp/issue-body.md
+          gh issue create --title "$title" --label "$label" --body-file /tmp/issue-body.md
