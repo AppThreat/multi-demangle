@@ -306,7 +306,7 @@ fn swift_function_fields() {
 fn swift_generic_method_fields() {
     let info = structured("$s8mangling12GenericUnionO3FooyACyxGSicAEmlF");
     assert_eq!(info.display, "mangling.GenericUnion.Foo<A>(mangling.GenericUnion<A>.Type) -> (Swift.Int) -> mangling.GenericUnion<A>");
-    assert_eq!(info.simple, "GenericUnion.Foo<A>");
+    assert_eq!(info.simple, "GenericUnion.Foo<A>(_:)");
     // Swift module paths split on `.`, with generic groups kept together.
     assert_eq!(info.namespace, ["mangling", "GenericUnion"]);
     assert_eq!(info.name, "Foo");

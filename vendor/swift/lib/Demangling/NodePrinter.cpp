@@ -945,11 +945,10 @@ void NodePrinter::printFunctionType(NodePointer LabelList, NodePointer node,
   if (isSendable)
     Printer << "@Sendable ";
 
-  if (Options.ShowFunctionArgumentTypes) {
-    printFunctionParameters(LabelList, node->getChild(argIndex), depth, true);
-  }
+  printFunctionParameters(LabelList, node->getChild(argIndex), depth,
+                          Options.ShowFunctionArgumentTypes);
 
-  if (!Options.ShowFunctionReturnType)
+  if (!Options.ShowFunctionArgumentTypes)
     return;
 
   if (isAsync)

@@ -1,0 +1,416 @@
+Foundation.Data.init<A where A: Swift.Sequence, A.Element == Swift.UInt8>(A) -> Foundation.Data
+associated type descriptor for Swift.Collection.Index
+associated type descriptor for fixture.Payload.Value
+associated type descriptor for Swift.Sequence.Element
+static fixture.CouchError.__derived_enum_equals(fixture.CouchError, fixture.CouchError) -> Swift.Bool
+fixture.CouchError.hash(into: inout Swift.Hasher) -> ()
+fixture.CouchError.hashValue.getter : Swift.Int
+lazy protocol witness table accessor for type fixture.CouchError and conformance fixture.CouchError : Swift.Error in fixture
+lazy protocol witness table cache variable for type fixture.CouchError and conformance fixture.CouchError : Swift.Error in fixture
+lazy protocol witness table accessor for type fixture.CouchError and conformance fixture.CouchError : Swift.Hashable in fixture
+lazy protocol witness table cache variable for type fixture.CouchError and conformance fixture.CouchError : Swift.Hashable in fixture
+lazy protocol witness table accessor for type fixture.CouchError and conformance fixture.CouchError : Swift.Equatable in fixture
+lazy protocol witness table cache variable for type fixture.CouchError and conformance fixture.CouchError : Swift.Equatable in fixture
+type metadata accessor for fixture.CouchError
+full type metadata for fixture.CouchError
+reflection metadata field descriptor fixture.CouchError
+nominal type descriptor for fixture.CouchError
+type metadata for fixture.CouchError
+protocol conformance descriptor for fixture.CouchError : Swift.Error in fixture
+metadata instantiation cache for protocol conformance descriptor for fixture.CouchError : Swift.Error in fixture
+protocol witness for Swift.Error._getEmbeddedNSError() -> Swift.Optional<Swift.AnyObject> in conformance fixture.CouchError : Swift.Error in fixture
+protocol witness for Swift.Error._code.getter : Swift.Int in conformance fixture.CouchError : Swift.Error in fixture
+protocol witness for Swift.Error._domain.getter : Swift.String in conformance fixture.CouchError : Swift.Error in fixture
+protocol witness for Swift.Error._userInfo.getter : Swift.Optional<Swift.AnyObject> in conformance fixture.CouchError : Swift.Error in fixture
+protocol conformance descriptor for fixture.CouchError : Swift.Hashable in fixture
+metadata instantiation cache for protocol conformance descriptor for fixture.CouchError : Swift.Hashable in fixture
+protocol witness for Swift.Hashable._rawHashValue(seed: Swift.Int) -> Swift.Int in conformance fixture.CouchError : Swift.Hashable in fixture
+protocol witness for Swift.Hashable.hash(into: inout Swift.Hasher) -> () in conformance fixture.CouchError : Swift.Hashable in fixture
+protocol witness for Swift.Hashable.hashValue.getter : Swift.Int in conformance fixture.CouchError : Swift.Hashable in fixture
+base witness table accessor for Swift.Equatable in fixture.CouchError : Swift.Hashable in fixture
+protocol conformance descriptor for fixture.CouchError : Swift.Equatable in fixture
+metadata instantiation cache for protocol conformance descriptor for fixture.CouchError : Swift.Equatable in fixture
+protocol witness for static Swift.Equatable.== infix(A, A) -> Swift.Bool in conformance fixture.CouchError : Swift.Equatable in fixture
+getEnumTagSinglePayload value witness for fixture.CouchError
+storeEnumTagSinglePayload value witness for fixture.CouchError
+getEnumTag value witness for fixture.CouchError
+destructiveInjectEnumTag value witness for fixture.CouchError
+destructiveProjectEnumData value witness for fixture.CouchError
+value witness table for fixture.CouchError
+fixture.discardable(Swift.Bool) -> Swift.Int
+fixture.firstOfPack<each A where A: fixture.Payload2>(repeat A) -> Swift.Int
+fixture.throwsOnError(code: Swift.Int) throws -> Swift.Int
+fixture.existentialAny(fixture.Payload) -> fixture.Payload
+fixture.opaqueTransfer<A where A: fixture.Payload>(A) -> some
+anonymous descriptor fixture.opaqueTransfer<A where A: fixture.Payload>(A) -> some
+opaque type descriptor for <<opaque return type of fixture.opaqueTransfer<A where A: fixture.Payload>(A) -> some>>
+fixture.autoclosureWrap(@autoclosure () -> Swift.Int) -> Swift.Int
+fixture.buildDeepClosure() -> () -> () -> Swift.Int
+closure #1 () -> () -> Swift.Int in fixture.buildDeepClosure() -> () -> () -> Swift.Int
+closure #1 () -> Swift.Int in closure #1 () -> () -> Swift.Int in fixture.buildDeepClosure() -> () -> () -> Swift.Int
+partial apply forwarder for closure #1 () -> Swift.Int in closure #1 () -> () -> Swift.Int in fixture.buildDeepClosure() -> () -> () -> Swift.Int
+fixture.rethrowingBridge(_: () throws -> Swift.Int, transform: (Swift.Int) -> Swift.Int) throws -> Swift.Int
+fixture.makeSendableCounter() -> @Sendable (Swift.Int) async -> Swift.Int
+closure #1 @Sendable (Swift.Int) async -> Swift.Int in fixture.makeSendableCounter() -> @Sendable (Swift.Int) async -> Swift.Int
+(2) await resume partial function for closure #1 @Sendable (Swift.Int) async -> Swift.Int in fixture.makeSendableCounter() -> @Sendable (Swift.Int) async -> Swift.Int
+async function pointer to closure #1 @Sendable (Swift.Int) async -> Swift.Int in fixture.makeSendableCounter() -> @Sendable (Swift.Int) async -> Swift.Int
+(1) suspend resume partial function for closure #1 @Sendable (Swift.Int) async -> Swift.Int in fixture.makeSendableCounter() -> @Sendable (Swift.Int) async -> Swift.Int
+(3) suspend resume partial function for closure #1 @Sendable (Swift.Int) async -> Swift.Int in fixture.makeSendableCounter() -> @Sendable (Swift.Int) async -> Swift.Int
+closure #1 (Swift.CheckedContinuation<Swift.Int, Swift.Never>) -> () in closure #1 @Sendable (Swift.Int) async -> Swift.Int in fixture.makeSendableCounter() -> @Sendable (Swift.Int) async -> Swift.Int
+partial apply forwarder for closure #1 (Swift.CheckedContinuation<Swift.Int, Swift.Never>) -> () in closure #1 @Sendable (Swift.Int) async -> Swift.Int in fixture.makeSendableCounter() -> @Sendable (Swift.Int) async -> Swift.Int
+fixture.<> infix<A where A: Swift.Numeric>(A, A) -> A
+fixture.fetch(Swift.String) async throws -> Foundation.Data
+(1) await resume partial function for fixture.fetch(Swift.String) async throws -> Foundation.Data
+async function pointer to fixture.fetch(Swift.String) async throws -> Foundation.Data
+(2) suspend resume partial function for fixture.fetch(Swift.String) async throws -> Foundation.Data
+fixture.Gauge.init(level: Swift.Int) -> fixture.Gauge
+default argument 0 of fixture.Gauge.init(level: Swift.Int) -> fixture.Gauge
+fixture.Gauge.level.getter : Swift.Int
+fixture.Gauge.level.modify : Swift.Int
+fixture.Gauge.level.modify : Swift.Int with unmangled suffix ".resume.0"
+property wrapped field init accessor of fixture.Gauge.level : Swift.Int
+property wrapper backing initializer of fixture.Gauge.level : Swift.Int
+fixture.Gauge.level.setter : Swift.Int
+fixture.Gauge.(_level in _DAA42B1F949A9B1C31EB6D013C2DE187).getter : fixture.Clamped<Swift.Int>
+variable initialization expression of fixture.Gauge.(_level in _DAA42B1F949A9B1C31EB6D013C2DE187) : fixture.Clamped<Swift.Int>
+fixture.Gauge.(_level in _DAA42B1F949A9B1C31EB6D013C2DE187).setter : fixture.Clamped<Swift.Int>
+fixture.Gauge.init() -> fixture.Gauge
+type metadata accessor for fixture.Gauge
+full type metadata for fixture.Gauge
+reflection metadata field descriptor fixture.Gauge
+nominal type descriptor for fixture.Gauge
+type metadata for fixture.Gauge
+getEnumTagSinglePayload value witness for fixture.Gauge
+storeEnumTagSinglePayload value witness for fixture.Gauge
+value witness table for fixture.Gauge
+fixture.Gauge.subscript.getter : (Swift.Int) -> Swift.String
+fixture.Meter.unownedExecutor.getter : Swift.UnownedSerialExecutor
+fixture.Meter.kind.getter : Swift.String
+method descriptor for fixture.Meter.kind.getter : Swift.String
+fixture.Meter.tick(by: Swift.Int) -> Swift.Int
+default argument 0 of fixture.Meter.tick(by: Swift.Int) -> Swift.Int
+method descriptor for fixture.Meter.tick(by: Swift.Int) -> Swift.Int
+fixture.Meter.drain() async -> Swift.Int
+method descriptor for fixture.Meter.drain() async -> Swift.Int
+async function pointer to fixture.Meter.drain() async -> Swift.Int
+(1) suspend resume partial function for fixture.Meter.drain() async -> Swift.Int
+fixture.Meter.(ticks in _DAA42B1F949A9B1C31EB6D013C2DE187).getter : Swift.Int
+method descriptor for fixture.Meter.(ticks in _DAA42B1F949A9B1C31EB6D013C2DE187).getter : Swift.Int
+fixture.Meter.(ticks in _DAA42B1F949A9B1C31EB6D013C2DE187).modify : Swift.Int
+fixture.Meter.(ticks in _DAA42B1F949A9B1C31EB6D013C2DE187).modify : Swift.Int with unmangled suffix ".resume.0"
+method descriptor for fixture.Meter.(ticks in _DAA42B1F949A9B1C31EB6D013C2DE187).modify : Swift.Int
+variable initialization expression of fixture.Meter.(ticks in _DAA42B1F949A9B1C31EB6D013C2DE187) : Swift.Int
+direct field offset for fixture.Meter.(ticks in _DAA42B1F949A9B1C31EB6D013C2DE187) : Swift.Int
+fixture.Meter.(ticks in _DAA42B1F949A9B1C31EB6D013C2DE187).setter : Swift.Int
+method descriptor for fixture.Meter.(ticks in _DAA42B1F949A9B1C31EB6D013C2DE187).setter : Swift.Int
+fixture.Meter.init() -> fixture.Meter
+fixture.Meter.__allocating_init() -> fixture.Meter
+method descriptor for fixture.Meter.__allocating_init() -> fixture.Meter
+fixture.Meter.deinit
+fixture.Meter.__deallocating_deinit
+type metadata accessor for fixture.Meter
+full type metadata for fixture.Meter
+reflection metadata field descriptor fixture.Meter
+metaclass for fixture.Meter
+nominal type descriptor for fixture.Meter
+type metadata for fixture.Meter
+protocol conformance descriptor for fixture.Meter : Swift.Actor in fixture
+metadata instantiation cache for protocol conformance descriptor for fixture.Meter : Swift.Actor in fixture
+protocol witness for Swift.Actor.unownedExecutor.getter : Swift.UnownedSerialExecutor in conformance fixture.Meter : Swift.Actor in fixture
+fixture.plain(_: Swift.Int, label: Swift.String) -> Swift.Bool
+fixture.Nested.Inner.deep(Swift.Bool) -> Swift.Int
+fixture.Nested.Inner.init() -> fixture.Nested.Inner
+type metadata accessor for fixture.Nested.Inner
+full type metadata for fixture.Nested.Inner
+reflection metadata field descriptor fixture.Nested.Inner
+nominal type descriptor for fixture.Nested.Inner
+type metadata for fixture.Nested.Inner
+fixture.Nested.shallow() -> fixture.Nested.Inner
+fixture.Nested.init() -> fixture.Nested
+type metadata accessor for fixture.Nested
+full type metadata for fixture.Nested
+reflection metadata field descriptor fixture.Nested
+nominal type descriptor for fixture.Nested
+type metadata for fixture.Nested
+fixture.Packet.description.getter : Swift.String
+fixture.Packet.init(value: Swift.Int, origin: Swift.String) -> fixture.Packet
+fixture.Packet.value.getter : Swift.Int
+fixture.Packet.value.modify : Swift.Int
+fixture.Packet.value.modify : Swift.Int with unmangled suffix ".resume.0"
+fixture.Packet.value.setter : Swift.Int
+fixture.Packet.origin.getter : Swift.String
+protocol witness for fixture.Payload.value.getter : A.Value in conformance fixture.Packet : fixture.Payload in fixture
+reflection metadata associated type descriptor fixture.Packet : fixture.Payload in fixture
+protocol conformance descriptor for fixture.Packet : fixture.Payload in fixture
+protocol witness table for fixture.Packet : fixture.Payload in fixture
+type metadata accessor for fixture.Packet
+full type metadata for fixture.Packet
+reflection metadata field descriptor fixture.Packet
+nominal type descriptor for fixture.Packet
+type metadata for fixture.Packet
+protocol conformance descriptor for fixture.Packet : Swift.CustomStringConvertible in fixture
+metadata instantiation cache for protocol conformance descriptor for fixture.Packet : Swift.CustomStringConvertible in fixture
+protocol witness for Swift.CustomStringConvertible.description.getter : Swift.String in conformance fixture.Packet : Swift.CustomStringConvertible in fixture
+assignWithCopy value witness for fixture.Packet
+initializeWithCopy value witness for fixture.Packet
+initializeBufferWithCopyOfBuffer value witness for fixture.Packet
+getEnumTagSinglePayload value witness for fixture.Packet
+storeEnumTagSinglePayload value witness for fixture.Packet
+assignWithTake value witness for fixture.Packet
+value witness table for fixture.Packet
+destroy value witness for fixture.Packet
+fixture.Clamped.init(wrappedValue: A, _: Swift.ClosedRange<A>) -> fixture.Clamped<A>
+fixture.Clamped.wrappedValue.getter : A
+fixture.Clamped.wrappedValue.modify : A
+fixture.Clamped.wrappedValue.modify : A with unmangled suffix ".resume.0"
+fixture.Clamped.wrappedValue.setter : A
+fixture.Clamped.range.getter : Swift.ClosedRange<A>
+type metadata accessor for fixture.Clamped
+reflection metadata field descriptor fixture.Clamped
+type metadata instantiation function for fixture.Clamped
+type metadata instantiation cache for fixture.Clamped
+nominal type descriptor for fixture.Clamped
+generic type metadata pattern for fixture.Clamped
+type metadata completion function for fixture.Clamped
+assignWithCopy value witness for fixture.Clamped
+initializeWithCopy value witness for fixture.Clamped
+initializeBufferWithCopyOfBuffer value witness for fixture.Clamped
+getEnumTagSinglePayload value witness for fixture.Clamped
+storeEnumTagSinglePayload value witness for fixture.Clamped
+assignWithTake value witness for fixture.Clamped
+initializeWithTake value witness for fixture.Clamped
+value witness table for fixture.Clamped
+destroy value witness for fixture.Clamped
+outlined init with copy of fixture.Clamped<A>
+outlined destroy of fixture.Clamped<A>
+fixture.measure<A where A: fixture.Payload, A.Value: Swift.Numeric>(_: A, times: Swift.Int) -> A.Value
+fixture.Outcome.isDelivered.getter : Swift.Bool
+type metadata accessor for fixture.Outcome
+reflection metadata field descriptor fixture.Outcome
+type metadata instantiation function for fixture.Outcome
+type metadata instantiation cache for fixture.Outcome
+nominal type descriptor for fixture.Outcome
+generic type metadata pattern for fixture.Outcome
+type metadata completion function for fixture.Outcome
+assignWithCopy value witness for fixture.Outcome
+initializeWithCopy value witness for fixture.Outcome
+initializeBufferWithCopyOfBuffer value witness for fixture.Outcome
+getEnumTagSinglePayload value witness for fixture.Outcome
+storeEnumTagSinglePayload value witness for fixture.Outcome
+assignWithTake value witness for fixture.Outcome
+initializeWithTake value witness for fixture.Outcome
+getEnumTag value witness for fixture.Outcome
+destructiveInjectEnumTag value witness for fixture.Outcome
+destructiveProjectEnumData value witness for fixture.Outcome
+value witness table for fixture.Outcome
+destroy value witness for fixture.Outcome
+outlined init with copy of fixture.Outcome<A>
+outlined destroy of fixture.Outcome<A>
+reflection metadata field descriptor fixture.Payload
+outlined init with copy of fixture.Payload
+protocol descriptor for fixture.Payload
+protocol requirements base descriptor for fixture.Payload
+reflection metadata field descriptor fixture.Payload2
+protocol descriptor for fixture.Payload2
+fixture.variadic(_: Swift.Int..., sep: Swift.String) -> Swift.String
+implicit closure #1 (Swift.Int) -> Swift.String in fixture.variadic(_: Swift.Int..., sep: Swift.String) -> Swift.String
+fixture.Dashboard.count.getter : Swift.Int
+fixture.Dashboard.sweep() async -> Swift.Array<Swift.String>
+closure #1 (inout Swift.TaskGroup<Swift.String>) async -> Swift.Array<Swift.String> in fixture.Dashboard.sweep() async -> Swift.Array<Swift.String>
+closure #1 () async -> Swift.String in closure #1 (inout Swift.TaskGroup<Swift.String>) async -> Swift.Array<Swift.String> in fixture.Dashboard.sweep() async -> Swift.Array<Swift.String>
+partial apply forwarder for closure #1 () async -> Swift.String in closure #1 (inout Swift.TaskGroup<Swift.String>) async -> Swift.Array<Swift.String> in fixture.Dashboard.sweep() async -> Swift.Array<Swift.String>
+(1) await resume partial function for partial apply forwarder for closure #1 () async -> Swift.String in closure #1 (inout Swift.TaskGroup<Swift.String>) async -> Swift.Array<Swift.String> in fixture.Dashboard.sweep() async -> Swift.Array<Swift.String>
+async function pointer to partial apply forwarder for closure #1 () async -> Swift.String in closure #1 (inout Swift.TaskGroup<Swift.String>) async -> Swift.Array<Swift.String> in fixture.Dashboard.sweep() async -> Swift.Array<Swift.String>
+async function pointer to closure #1 () async -> Swift.String in closure #1 (inout Swift.TaskGroup<Swift.String>) async -> Swift.Array<Swift.String> in fixture.Dashboard.sweep() async -> Swift.Array<Swift.String>
+(1) suspend resume partial function for closure #1 () async -> Swift.String in closure #1 (inout Swift.TaskGroup<Swift.String>) async -> Swift.Array<Swift.String> in fixture.Dashboard.sweep() async -> Swift.Array<Swift.String>
+partial apply forwarder for closure #1 (inout Swift.TaskGroup<Swift.String>) async -> Swift.Array<Swift.String> in fixture.Dashboard.sweep() async -> Swift.Array<Swift.String>
+(1) await resume partial function for partial apply forwarder for closure #1 (inout Swift.TaskGroup<Swift.String>) async -> Swift.Array<Swift.String> in fixture.Dashboard.sweep() async -> Swift.Array<Swift.String>
+async function pointer to partial apply forwarder for closure #1 (inout Swift.TaskGroup<Swift.String>) async -> Swift.Array<Swift.String> in fixture.Dashboard.sweep() async -> Swift.Array<Swift.String>
+(2) await resume partial function for closure #1 (inout Swift.TaskGroup<Swift.String>) async -> Swift.Array<Swift.String> in fixture.Dashboard.sweep() async -> Swift.Array<Swift.String>
+async function pointer to closure #1 (inout Swift.TaskGroup<Swift.String>) async -> Swift.Array<Swift.String> in fixture.Dashboard.sweep() async -> Swift.Array<Swift.String>
+(1) suspend resume partial function for closure #1 (inout Swift.TaskGroup<Swift.String>) async -> Swift.Array<Swift.String> in fixture.Dashboard.sweep() async -> Swift.Array<Swift.String>
+(3) suspend resume partial function for closure #1 (inout Swift.TaskGroup<Swift.String>) async -> Swift.Array<Swift.String> in fixture.Dashboard.sweep() async -> Swift.Array<Swift.String>
+(2) await resume partial function for fixture.Dashboard.sweep() async -> Swift.Array<Swift.String>
+async function pointer to fixture.Dashboard.sweep() async -> Swift.Array<Swift.String>
+(1) suspend resume partial function for fixture.Dashboard.sweep() async -> Swift.Array<Swift.String>
+(3) suspend resume partial function for fixture.Dashboard.sweep() async -> Swift.Array<Swift.String>
+fixture.Dashboard.record(_: Swift.String, value: Swift.Int) -> ()
+fixture.Dashboard.(readings in _DAA42B1F949A9B1C31EB6D013C2DE187).getter : Swift.Dictionary<Swift.String, Swift.Int>
+variable initialization expression of fixture.Dashboard.(readings in _DAA42B1F949A9B1C31EB6D013C2DE187) : Swift.Dictionary<Swift.String, Swift.Int>
+direct field offset for fixture.Dashboard.(readings in _DAA42B1F949A9B1C31EB6D013C2DE187) : Swift.Dictionary<Swift.String, Swift.Int>
+fixture.Dashboard.(readings in _DAA42B1F949A9B1C31EB6D013C2DE187).setter : Swift.Dictionary<Swift.String, Swift.Int>
+fixture.Dashboard.init() -> fixture.Dashboard
+fixture.Dashboard.__allocating_init() -> fixture.Dashboard
+method descriptor for fixture.Dashboard.__allocating_init() -> fixture.Dashboard
+fixture.Dashboard.deinit
+fixture.Dashboard.__deallocating_deinit
+type metadata accessor for fixture.Dashboard
+full type metadata for fixture.Dashboard
+reflection metadata field descriptor fixture.Dashboard
+metaclass for fixture.Dashboard
+nominal type descriptor for fixture.Dashboard
+type metadata for fixture.Dashboard
+module descriptor fixture
+value witness table for Builtin.NativeObject
+Swift._expectEnd<A where A: Swift.Collection>(of: A, is: A.Index) -> ()
+Swift._hashValue<A where A: Swift.Hashable>(for: A) -> Swift.Int
+Swift.withTaskGroup<A, B where A: Swift.Sendable>(of: A.Type, returning: B.Type, isolation: isolated Swift.Optional<Swift.Actor>, body: (inout Swift.TaskGroup<A>) async -> B) async -> B
+default argument 1 of Swift.withTaskGroup<A, B where A: Swift.Sendable>(of: A.Type, returning: B.Type, isolation: isolated Swift.Optional<Swift.Actor>, body: (inout Swift.TaskGroup<A>) async -> B) async -> B
+async function pointer to Swift.withTaskGroup<A, B where A: Swift.Sendable>(of: A.Type, returning: B.Type, isolation: isolated Swift.Optional<Swift.Actor>, body: (inout Swift.TaskGroup<A>) async -> B) async -> B
+Swift.ContiguousArray.reserveCapacity(Swift.Int) -> ()
+Swift.ContiguousArray.append(__owned A) -> ()
+Swift.ContiguousArray.init() -> Swift.ContiguousArray<A>
+type metadata accessor for Swift.ContiguousArray
+outlined destroy of Swift.ContiguousArray<A1>
+protocol conformance descriptor for Swift.ContiguousArray<A> : Swift.Sequence in Swift
+Swift.IndexingIterator.next() -> Swift.Optional<A.Element>
+nominal type descriptor for Swift.IndexingIterator
+_$ss16IndexingIteratorVySnySiGGMd
+_$ss16IndexingIteratorVySnySiGGMR
+Swift._assertionFailure(_: Swift.StaticString, _: Swift.StaticString, file: Swift.StaticString, line: Swift.UInt, flags: Swift.UInt32) -> Swift.Never
+Swift._fatalErrorMessage(_: Swift.StaticString, _: Swift.StaticString, file: Swift.StaticString, line: Swift.UInt, flags: Swift.UInt32) -> Swift.Never
+dispatch thunk of static Swift.AdditiveArithmetic.+ infix(A, A) -> A
+dispatch thunk of static Swift.AdditiveArithmetic.+= infix(inout A, A) -> ()
+dispatch thunk of static Swift.AdditiveArithmetic.zero.getter : A
+protocol descriptor for Swift.CustomStringConvertible
+method descriptor for Swift.CustomStringConvertible.description.getter : Swift.String
+Swift.withCheckedContinuation<A>(isolation: isolated Swift.Optional<Swift.Actor>, function: Swift.String, _: (Swift.CheckedContinuation<A, Swift.Never>) -> ()) async -> A
+async function pointer to Swift.withCheckedContinuation<A>(isolation: isolated Swift.Optional<Swift.Actor>, function: Swift.String, _: (Swift.CheckedContinuation<A, Swift.Never>) -> ()) async -> A
+Swift.DefaultStringInterpolation.appendInterpolation<A where A: Swift.CustomStringConvertible>(A) -> ()
+Swift.DefaultStringInterpolation.appendLiteral(Swift.String) -> ()
+Swift.DefaultStringInterpolation.init(literalCapacity: Swift.Int, interpolationCount: Swift.Int) -> Swift.DefaultStringInterpolation
+outlined destroy of Swift.DefaultStringInterpolation
+Swift._allocateUninitializedArray<A>(Builtin.Word) -> (Swift.Array<A>, Builtin.RawPointer)
+lazy protocol witness table accessor for type Swift.Int and conformance Swift.Int : Swift.SignedInteger in Swift
+lazy protocol witness table cache variable for type Swift.Int and conformance Swift.Int : Swift.SignedInteger in Swift
+Swift.max<A where A: Swift.Comparable>(A, A) -> A
+Swift.min<A where A: Swift.Comparable>(A, A) -> A
+protocol descriptor for Swift.Error
+method descriptor for Swift.Error._getEmbeddedNSError() -> Swift.Optional<Swift.AnyObject>
+method descriptor for Swift.Error._code.getter : Swift.Int
+method descriptor for Swift.Error._domain.getter : Swift.String
+method descriptor for Swift.Error._userInfo.getter : Swift.Optional<Swift.AnyObject>
+(extension in Swift):Swift.Error._getEmbeddedNSError() -> Swift.Optional<Swift.AnyObject>
+(extension in Swift):Swift.Error._code.getter : Swift.Int
+(extension in Swift):Swift.Error._domain.getter : Swift.String
+(extension in Swift):Swift.Error._userInfo.getter : Swift.Optional<Swift.AnyObject>
+nominal type descriptor for Swift.Never
+type metadata for Swift.Never
+protocol witness table for Swift.Never : Swift.Error in Swift
+Swift.Hasher.combine<A where A: Swift.Hashable>(A) -> ()
+static Swift.Array._allocateUninitialized(Swift.Int) -> (Swift.Array<A>, Swift.UnsafeMutablePointer<A>)
+Swift.Array.append(__owned A) -> ()
+Swift.Array.init<A where A == A1.Element, A1: Swift.Sequence>(A1) -> Swift.Array<A>
+_$sSaySiGMd
+_$sSaySiGMR
+lazy protocol witness table accessor for type Swift.Array<Swift.Int> and conformance Swift.Array<A> : Swift.Collection in Swift
+lazy protocol witness table cache variable for type Swift.Array<Swift.Int> and conformance Swift.Array<A> : Swift.Collection in Swift
+_$sSaySSGMd
+_$sSaySSGMR
+lazy protocol witness table accessor for type Swift.Array<Swift.String> and conformance Swift.Array<A> : Swift.BidirectionalCollection in Swift
+lazy protocol witness table cache variable for type Swift.Array<Swift.String> and conformance Swift.Array<A> : Swift.BidirectionalCollection in Swift
+lazy protocol witness table accessor for type Swift.Array<Swift.String> and conformance Swift.Array<A> : Swift.Sequence in Swift
+lazy protocol witness table cache variable for type Swift.Array<Swift.String> and conformance Swift.Array<A> : Swift.Sequence in Swift
+outlined destroy of Swift.Array<Swift.String>
+protocol conformance descriptor for Swift.Array<A> : Swift.BidirectionalCollection in Swift
+protocol conformance descriptor for Swift.Array<A> : Swift.Collection in Swift
+protocol conformance descriptor for Swift.Array<A> : Swift.Sequence in Swift
+dispatch thunk of Swift.Actor.unownedExecutor.getter : Swift.UnownedSerialExecutor
+method descriptor for Swift.Actor.unownedExecutor.getter : Swift.UnownedSerialExecutor
+protocol descriptor for Swift.Actor
+Swift.CheckedContinuation.resume(returning: __owned A) -> ()
+_$sScCySis5NeverOGMd
+_$sScCySis5NeverOGMR
+Swift.UnownedSerialExecutor.init(Builtin.Executor) -> Swift.UnownedSerialExecutor
+Swift.TaskGroup.makeAsyncIterator() -> Swift.TaskGroup<A>.Iterator
+Swift.TaskGroup.addTask(priority: Swift.Optional<Swift.TaskPriority>, operation: __owned @isolated(any) () async -> A) -> ()
+Swift.TaskGroup.Iterator.next(isolation: isolated Swift.Optional<Swift.Actor>) async -> Swift.Optional<A>
+async function pointer to Swift.TaskGroup.Iterator.next(isolation: isolated Swift.Optional<Swift.Actor>) async -> Swift.Optional<A>
+nominal type descriptor for Swift.TaskGroup.Iterator
+_$sScG8IteratorVySS_GMd
+_$sScG8IteratorVySS_GMR
+_$sScGySSGMd
+_$sScGySSGMR
+static Swift.MainActor.shared.getter : Swift.MainActor
+type metadata accessor for Swift.MainActor
+protocol witness table for Swift.MainActor : Swift.Actor in Swift
+Swift.TaskPriority.rawValue.getter : Swift.UInt8
+type metadata accessor for Swift.TaskPriority
+_$sScPSgMd
+_$sScPSgMR
+outlined init with copy of Swift.Optional<Swift.TaskPriority>
+outlined destroy of Swift.Optional<Swift.TaskPriority>
+static (extension in Swift):Swift.Task< where A == Swift.Never, B == Swift.Never>.sleep(nanoseconds: Swift.UInt64) async throws -> ()
+async function pointer to static (extension in Swift):Swift.Task< where A == Swift.Never, B == Swift.Never>.sleep(nanoseconds: Swift.UInt64) async throws -> ()
+Swift.Dictionary.init(dictionaryLiteral: (A, B)...) -> Swift.Dictionary<A, B>
+Swift.Dictionary.keys.getter : Swift.Dictionary<A, B>.Keys
+Swift.Dictionary.Keys.makeIterator() -> Swift.Dictionary<A, B>.Keys.Iterator
+Swift.Dictionary.Keys.Iterator.next() -> Swift.Optional<A>
+nominal type descriptor for Swift.Dictionary.Keys.Iterator
+_$sSD4KeysV8IteratorVySSSi__GMd
+_$sSD4KeysV8IteratorVySSSi__GMR
+outlined destroy of Swift.Dictionary<Swift.String, Swift.Int>.Keys.Iterator
+Swift.Dictionary.count.getter : Swift.Int
+outlined consume of Swift.Dictionary<Swift.String, Swift.Int>.Iterator._Variant
+Swift.Dictionary.subscript.setter : (A) -> Swift.Optional<B>
+_$sSDySSSiGMd
+_$sSDySSSiGMR
+outlined destroy of Swift.Dictionary<Swift.String, Swift.Int>
+method descriptor for Swift.Hashable._rawHashValue(seed: Swift.Int) -> Swift.Int
+method descriptor for Swift.Hashable.hash(into: inout Swift.Hasher) -> ()
+method descriptor for Swift.Hashable.hashValue.getter : Swift.Int
+protocol descriptor for Swift.Hashable
+(extension in Swift):Swift.Hashable._rawHashValue(seed: Swift.Int) -> Swift.Int
+base conformance descriptor for Swift.Hashable: Swift.Equatable
+type metadata for Swift.Int
+protocol witness table for Swift.Int : Swift.CustomStringConvertible in Swift
+protocol witness table for Swift.Int : Swift.LosslessStringConvertible in Swift
+protocol witness table for Swift.Int : Swift.Hashable in Swift
+protocol witness table for Swift.Int : Swift.Comparable in Swift
+protocol witness table for Swift.Int : Swift.Strideable in Swift
+protocol conformance descriptor for Swift.Int : Swift.SignedInteger in Swift
+(extension in Swift):Swift.BidirectionalCollection< where A.Element == Swift.String>.joined(separator: Swift.String) -> Swift.String
+dispatch thunk of Swift.Collection.startIndex.getter : A.Index
+dispatch thunk of Swift.Collection.count.getter : Swift.Int
+dispatch thunk of Swift.Collection.formIndex(after: inout A.Index) -> ()
+protocol descriptor for Swift.Comparable
+(extension in Swift):Swift.Collection.map<A, B where B1: Swift.Error>((A.Element) throws(B1) -> A1) throws(B1) -> Swift.Array<A1>
+(extension in Swift):Swift.Collection< where A.Iterator == Swift.IndexingIterator<A>>.makeIterator() -> Swift.IndexingIterator<A>
+protocol requirements base descriptor for Swift.Collection
+dispatch thunk of Swift.Collection.subscript.read : (A.Index) -> A.Element
+type metadata accessor for Swift.ClosedRange
+_$sSnySiGMd
+_$sSnySiGMR
+lazy protocol witness table accessor for type Swift.Range<Swift.Int> and conformance < where A: Swift.Strideable, A.Stride: Swift.SignedInteger> Swift.Range<A> : Swift.Collection in Swift
+lazy protocol witness table cache variable for type Swift.Range<Swift.Int> and conformance < where A: Swift.Strideable, A.Stride: Swift.SignedInteger> Swift.Range<A> : Swift.Collection in Swift
+outlined init with copy of Swift.ClosedRange<A>
+outlined destroy of Swift.ClosedRange<A>
+protocol conformance descriptor for < where A: Swift.Strideable, A.Stride: Swift.SignedInteger> Swift.Range<A> : Swift.Collection in Swift
+method descriptor for static Swift.Equatable.== infix(A, A) -> Swift.Bool
+protocol descriptor for Swift.Equatable
+_$sSS_SitMd
+_$sSS_SitMR
+Swift.String.uppercased() -> Swift.String
+Swift.String.init(stringInterpolation: Swift.DefaultStringInterpolation) -> Swift.String
+Swift.String.init(_builtinStringLiteral: Builtin.RawPointer, utf8CodeUnitCount: Builtin.Word, isASCII: Builtin.Int1) -> Swift.String
+Swift.String.utf8.getter : Swift.String.UTF8View
+Swift.String.count.getter : Swift.Int
+lazy protocol witness table accessor for type Swift.String.UTF8View and conformance Swift.String.UTF8View : Swift.Sequence in Swift
+lazy protocol witness table cache variable for type Swift.String.UTF8View and conformance Swift.String.UTF8View : Swift.Sequence in Swift
+type metadata for Swift.String.UTF8View
+protocol conformance descriptor for Swift.String.UTF8View : Swift.Sequence in Swift
+type metadata for Swift.String
+protocol witness table for Swift.String : Swift.Hashable in Swift
+protocol witness table for Swift.String : Swift.Comparable in Swift
+Swift.String.init<A where A: Swift.LosslessStringConvertible>(A) -> Swift.String
+(extension in Swift):Swift.Sequence< where A.Element: Swift.Comparable>.sorted() -> Swift.Array<A.Element>
+protocol requirements base descriptor for Swift.Sequence
+reabstraction thunk helper <A where A: Swift.Sendable> from @escaping @isolated(any) @callee_guaranteed @async () -> (@out A) to @escaping @callee_guaranteed @async () -> (@out A, @error @owned Swift.Error)
+partial apply forwarder for reabstraction thunk helper <A where A: Swift.Sendable> from @escaping @isolated(any) @callee_guaranteed @async () -> (@out A) to @escaping @callee_guaranteed @async () -> (@out A, @error @owned Swift.Error)
+(1) await resume partial function for partial apply forwarder for reabstraction thunk helper <A where A: Swift.Sendable> from @escaping @isolated(any) @callee_guaranteed @async () -> (@out A) to @escaping @callee_guaranteed @async () -> (@out A, @error @owned Swift.Error)
+async function pointer to partial apply forwarder for reabstraction thunk helper <A where A: Swift.Sendable> from @escaping @isolated(any) @callee_guaranteed @async () -> (@out A) to @escaping @callee_guaranteed @async () -> (@out A, @error @owned Swift.Error)
+(1) await resume partial function for reabstraction thunk helper <A where A: Swift.Sendable> from @escaping @isolated(any) @callee_guaranteed @async () -> (@out A) to @escaping @callee_guaranteed @async () -> (@out A, @error @owned Swift.Error)
+async function pointer to reabstraction thunk helper <A where A: Swift.Sendable> from @escaping @isolated(any) @callee_guaranteed @async () -> (@out A) to @escaping @callee_guaranteed @async () -> (@out A, @error @owned Swift.Error)
+value witness table for ()
+fixture.Payload
+fixture.Payload2

@@ -44,19 +44,21 @@
 #ifndef LLVM_ADT_HASHING_H
 #define LLVM_ADT_HASHING_H
 
+#include "llvm/ADT/ADL.h"
+#include "llvm/Support/DataTypes.h"
 #include "llvm/Support/ErrorHandling.h"
 #include "llvm/Support/SwapByteOrder.h"
 #include "llvm/Support/type_traits.h"
 #include <algorithm>
 #include <cassert>
 #include <cstring>
-#include <cstdint>
+#include <optional>
 #include <string>
 #include <tuple>
 #include <utility>
 
-inline namespace __swift { inline namespace __runtime {
 namespace llvm {
+template <typename T, typename Enable> struct DenseMapInfo;
 
 /// An opaque object representing a hash code.
 ///
@@ -122,6 +124,8 @@ hash_code hash_value(const std::tuple<Ts...> &arg);
 template <typename T>
 hash_code hash_value(const std::basic_string<T> &arg);
 
+/// Compute a hash_code for a standard string.
+template <typename T> hash_code hash_value(const std::optional<T> &arg);
 
 /// Override the execution seed with a fixed value.
 ///
@@ -148,7 +152,7 @@ namespace detail {
 
 inline uint64_t fetch64(const char *p) {
   uint64_t result;
-  memcpy(&result, p, sizeof(result));
+  std::memcpy(&result, p, sizeof(result));
   if (sys::IsBigEndianHost)
     sys::swapByteOrder(result);
   return result;
@@ -156,7 +160,7 @@ inline uint64_t fetch64(const char *p) {
 
 inline uint32_t fetch32(const char *p) {
   uint32_t result;
-  memcpy(&result, p, sizeof(result));
+  std::memcpy(&result, p, sizeof(result));
   if (sys::IsBigEndianHost)
     sys::swapByteOrder(result);
   return result;
@@ -216,29 +220,30 @@ inline uint64_t hash_17to32_bytes(const char *s, size_t len, uint64_t seed) {
   uint64_t b = fetch64(s + 8);
   uint64_t c = fetch64(s + len - 8) * k2;
   uint64_t d = fetch64(s + len - 16) * k0;
-  return hash_16_bytes(rotate(a - b, 43) + rotate(c ^ seed, 30) + d,
-                       a + rotate(b ^ k3, 20) - c + len + seed);
+  return hash_16_bytes(llvm::rotr<uint64_t>(a - b, 43) +
+                           llvm::rotr<uint64_t>(c ^ seed, 30) + d,
+                       a + llvm::rotr<uint64_t>(b ^ k3, 20) - c + len + seed);
 }
 
 inline uint64_t hash_33to64_bytes(const char *s, size_t len, uint64_t seed) {
   uint64_t z = fetch64(s + 24);
   uint64_t a = fetch64(s) + (len + fetch64(s + len - 16)) * k0;
-  uint64_t b = rotate(a + z, 52);
-  uint64_t c = rotate(a, 37);
+  uint64_t b = llvm::rotr<uint64_t>(a + z, 52);
+  uint64_t c = llvm::rotr<uint64_t>(a, 37);
   a += fetch64(s + 8);
-  c += rotate(a, 7);
+  c += llvm::rotr<uint64_t>(a, 7);
   a += fetch64(s + 16);
   uint64_t vf = a + z;
-  uint64_t vs = b + rotate(a, 31) + c;
+  uint64_t vs = b + llvm::rotr<uint64_t>(a, 31) + c;
   a = fetch64(s + 16) + fetch64(s + len - 32);
   z = fetch64(s + len - 8);
-  b = rotate(a + z, 52);
-  c = rotate(a, 37);
+  b = llvm::rotr<uint64_t>(a + z, 52);
+  c = llvm::rotr<uint64_t>(a, 37);
   a += fetch64(s + len - 24);
-  c += rotate(a, 7);
+  c += llvm::rotr<uint64_t>(a, 7);
   a += fetch64(s + len - 16);
   uint64_t wf = a + z;
-  uint64_t ws = b + rotate(a, 31) + c;
+  uint64_t ws = b + llvm::rotr<uint64_t>(a, 31) + c;
   uint64_t r = shift_mix((vf + ws) * k2 + (wf + vs) * k0);
   return shift_mix((seed ^ (r * k0)) + vs) * k2;
 }
@@ -268,9 +273,13 @@ struct hash_state {
   /// seed and the first 64-byte chunk.
   /// This effectively performs the initial mix.
   static hash_state create(const char *s, uint64_t seed) {
-    hash_state state = {
-      0, seed, hash_16_bytes(seed, k1), rotate(seed ^ k1, 49),
-      seed * k1, shift_mix(seed), 0 };
+    hash_state state = {0,
+                        seed,
+                        hash_16_bytes(seed, k1),
+                        llvm::rotr<uint64_t>(seed ^ k1, 49),
+                        seed * k1,
+                        shift_mix(seed),
+                        0};
     state.h6 = hash_16_bytes(state.h4, state.h5);
     state.mix(s);
     return state;
@@ -281,10 +290,10 @@ struct hash_state {
   static void mix_32_bytes(const char *s, uint64_t &a, uint64_t &b) {
     a += fetch64(s);
     uint64_t c = fetch64(s + 24);
-    b = rotate(b + a + c, 21);
+    b = llvm::rotr<uint64_t>(b + a + c, 21);
     uint64_t d = a;
     a += fetch64(s + 8) + fetch64(s + 16);
-    b += rotate(a, 44) + d;
+    b += llvm::rotr<uint64_t>(a, 44) + d;
     a += c;
   }
 
@@ -292,11 +301,11 @@ struct hash_state {
   /// We mix all 64 bytes even when the chunk length is smaller, but we
   /// record the actual length.
   void mix(const char *s) {
-    h0 = rotate(h0 + h1 + h3 + fetch64(s + 8), 37) * k1;
-    h1 = rotate(h1 + h4 + fetch64(s + 48), 42) * k1;
+    h0 = llvm::rotr<uint64_t>(h0 + h1 + h3 + fetch64(s + 8), 37) * k1;
+    h1 = llvm::rotr<uint64_t>(h1 + h4 + fetch64(s + 48), 42) * k1;
     h0 ^= h6;
     h1 += h3 + fetch64(s + 40);
-    h2 = rotate(h2 + h5, 33) * k1;
+    h2 = llvm::rotr<uint64_t>(h2 + h5, 33) * k1;
     h3 = h4 * k1;
     h4 = h0 + h5;
     mix_32_bytes(s, h3, h4);
@@ -393,7 +402,7 @@ bool store_and_advance(char *&buffer_ptr, char *buffer_end, const T& value,
   if (buffer_ptr + store_size > buffer_end)
     return false;
   const char *value_data = reinterpret_cast<const char *>(&value);
-  memcpy(buffer_ptr, value_data + offset, store_size);
+  std::memcpy(buffer_ptr, value_data + offset, store_size);
   buffer_ptr += store_size;
   return true;
 }
@@ -484,6 +493,10 @@ hash_code hash_combine_range(InputIteratorT first, InputIteratorT last) {
   return ::llvm::hashing::detail::hash_combine_range_impl(first, last);
 }
 
+// A wrapper for hash_combine_range above.
+template <typename RangeT> hash_code hash_combine_range(RangeT &&R) {
+  return hash_combine_range(adl_begin(R), adl_end(R));
+}
 
 // Implementation details for hash_combine.
 namespace hashing {
@@ -523,7 +536,7 @@ public:
       // with the variadic combine because that formation can have varying
       // argument types.
       size_t partial_store_size = buffer_end - buffer_ptr;
-      memcpy(buffer_ptr, &data, partial_store_size);
+      std::memcpy(buffer_ptr, &data, partial_store_size);
 
       // If the store fails, our buffer is full and ready to hash. We have to
       // either initialize the hash state (on the first full buffer) or mix
@@ -651,34 +664,42 @@ hash_code hash_value(const std::pair<T, U> &arg) {
   return hash_combine(arg.first, arg.second);
 }
 
-// Implementation details for the hash_value overload for std::tuple<...>(...).
-namespace hashing {
-namespace detail {
-
-template <typename... Ts, std::size_t... Indices>
-hash_code hash_value_tuple_helper(const std::tuple<Ts...> &arg,
-                                  std::index_sequence<Indices...>) {
-  return hash_combine(std::get<Indices>(arg)...);
-}
-
-} // namespace detail
-} // namespace hashing
-
-template <typename... Ts>
-hash_code hash_value(const std::tuple<Ts...> &arg) {
-  // TODO: Use std::apply when LLVM starts using C++17.
-  return ::llvm::hashing::detail::hash_value_tuple_helper(
-      arg, typename std::index_sequence_for<Ts...>());
+template <typename... Ts> hash_code hash_value(const std::tuple<Ts...> &arg) {
+  return std::apply([](const auto &...xs) { return hash_combine(xs...); }, arg);
 }
 
 // Declared and documented above, but defined here so that any of the hashing
 // infrastructure is available.
 template <typename T>
 hash_code hash_value(const std::basic_string<T> &arg) {
-  return hash_combine_range(arg.begin(), arg.end());
+  return hash_combine_range(arg);
 }
 
+template <typename T> hash_code hash_value(const std::optional<T> &arg) {
+  return arg ? hash_combine(true, *arg) : hash_value(false);
+}
+
+template <> struct DenseMapInfo<hash_code, void> {
+  static inline hash_code getEmptyKey() { return hash_code(-1); }
+  static inline hash_code getTombstoneKey() { return hash_code(-2); }
+  static unsigned getHashValue(hash_code val) {
+    return static_cast<unsigned>(size_t(val));
+  }
+  static bool isEqual(hash_code LHS, hash_code RHS) { return LHS == RHS; }
+};
+
 } // namespace llvm
-}} // namespace swift::runtime
+
+/// Implement std::hash so that hash_code can be used in STL containers.
+namespace std {
+
+template<>
+struct hash<llvm::hash_code> {
+  size_t operator()(llvm::hash_code const& Val) const {
+    return Val;
+  }
+};
+
+} // namespace std;
 
 #endif

@@ -10,6 +10,17 @@ with `nm` from binaries present on the collection machine. Regenerate with
 `scripts/collect-corpus.sh` (override sources via `RUST_BINARIES`,
 `SWIFT_DYLIB`, `CPP_BINARY`, `MAX_PER_FILE`).
 
+## Per-toolchain Swift snapshots (`swift/`)
+
+The `swift/` subdirectory holds the per-toolchain corpora managed by
+`scripts/collect-swift-corpus.sh`: one `<version>/` directory per Swift
+toolchain (`symbols.txt` collected from compiling
+`scripts/swift-corpus-fixture.swift`, `provenance.txt` describing the
+toolchain, and `expected.txt` snapshotting this project's rendering —
+compared by `tests/test_swift_corpus.rs`). These back the README's
+"up to Swift X" claim; see the main README for the update workflow.
+They are not consumed by the benchmark, which reads the top-level files only.
+
 ## Provenance
 
 Collected 2026-08-29 on macOS 26.6 (arm64); `nm` from the Xcode toolchain.
