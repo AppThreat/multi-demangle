@@ -40,7 +40,7 @@ fn test_dlang_functions() {
             "module.func",
         ),
         ("_D6module4funcFAiZv", "module.func(int[])", "module.func"),
-        ("_D6module4funcFGi3Zv", "module.func(int[3])", "module.func"),
+        ("_D6module4funcFG3iZv", "module.func(int[3])", "module.func"),
         // Variadics.
         ("_D6module4funcFXv", "module.func(...)", "module.func"),
         ("_D6module4funcFiXv", "module.func(int, ...)", "module.func"),

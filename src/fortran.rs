@@ -10,12 +10,16 @@
 //! | ----------------- | ------------------------------ | -------------------- |
 //! | gfortran          | `__<module>_MOD_<proc>`        | `<module>::<proc>`   |
 //! | gfortran (no `__`) | `<module>_MOD_<proc>`         | `<module>::<proc>`   |
-//! | gfortran, renamed | `__<module>_MOD_<proc>_<len>`  | `<module>::<proc>`   |
 //! | Intel ifort/ifx   | `<module>_mp_<proc>_`          | `<module>::<proc>`   |
 //!
-//! The plain g77 form `<name>_` (a trailing underscore appended to a symbol
-//! whose name contains no underscore) is demangled only when explicitly
-//! requested through [`crate::demangle_as`]: any C symbol may end in `_`, so
+//! The procedure part is taken verbatim. gfortran appends no length or
+//! disambiguation suffix: `subroutine interp_3` in `module numerics` emits
+//! exactly `__numerics_MOD_interp_3`, so stripping a trailing `_<digits>`
+//! would corrupt every procedure whose name ends in digits. Verified against
+//! gfortran 12 via `contrib/` — see `contrib/fixtures/fortran/corpus.f90`.
+//!
+//! The plain g77 form `<name>_` is demangled only when explicitly requested
+//! through [`crate::demangle_as`]: any C symbol may end in `_`, so
 //! auto-detection never claims that form.
 //!
 //! References: [CMake FortranCInterface](https://cmake.org/cmake/help/latest/module/FortranCInterface.html),
@@ -68,9 +72,6 @@ pub(crate) fn parse_module_symbol(symbol: &str) -> Option<FortranSymbol> {
     if let Some((module, rest)) = symbol.split_once("_mp_") {
         if is_identifier(module) {
             let proc = rest.strip_suffix('_').unwrap_or(rest);
-            // The procedure part may carry a trailing `_<digits>` length
-            // suffix on renamed symbols, mirroring the gfortran form below.
-            let proc = strip_length_suffix(proc)?;
             if is_identifier(proc) {
                 return Some(FortranSymbol {
                     module: module.to_ascii_lowercase(),
@@ -86,36 +87,13 @@ pub(crate) fn parse_module_symbol(symbol: &str) -> Option<FortranSymbol> {
     if !is_identifier(module) {
         return None;
     }
-    let proc = strip_length_suffix(rest)?;
-    if is_identifier(proc) {
+    if is_identifier(rest) {
         return Some(FortranSymbol {
             module: module.to_ascii_lowercase(),
-            name: proc.to_string(),
+            name: rest.to_string(),
         });
     }
     None
-}
-
-/// Strips a trailing `_<digits>` disambiguation suffix (gfortran renames
-/// symbols whose mangled form would clash, appending the length of the
-/// original name), refusing empty results.
-fn strip_length_suffix(name: &str) -> Option<&str> {
-    let stripped = match name.rfind('_') {
-        Some(idx) => {
-            let digits = &name[idx + 1..];
-            if !digits.is_empty() && digits.bytes().all(|b| b.is_ascii_digit()) {
-                &name[..idx]
-            } else {
-                name
-            }
-        }
-        None => name,
-    };
-    if stripped.is_empty() {
-        None
-    } else {
-        Some(stripped)
-    }
 }
 
 /// Parses the plain g77 form: `<name>_` (or `<name>__` for names that already
@@ -125,17 +103,19 @@ fn strip_length_suffix(name: &str) -> Option<&str> {
 /// Deliberately not part of auto-detection — a C symbol may end in `_` — so
 /// this form is only demangled on explicit request (see [`crate::demangle_as`]).
 pub(crate) fn parse_plain_symbol(symbol: &str) -> Option<FortranSymbol> {
-    let single = symbol.strip_suffix('_')?;
-    let (name, underscored) = match single.strip_suffix('_') {
-        Some(base) => (base, true),
-        None => (single, false),
+    let base = symbol.strip_suffix('_')?;
+    // g77/f2c (and gfortran under `-fsecond-underscore`) append a *second*
+    // underscore to names that already contain one. gfortran does not do
+    // that by default — `subroutine two_words` really does emit
+    // `two_words_` — so a single trailing underscore is the common case and
+    // the doubled one is only unwrapped when the remaining name is itself
+    // underscored. Otherwise `init__` is the mangling of a subroutine
+    // genuinely named `init_`.
+    let name = match base.strip_suffix('_') {
+        Some(inner) if inner.contains('_') => inner,
+        _ => base,
     };
     if name.is_empty() || !is_identifier(name) {
-        return None;
-    }
-    // The double-underscore form is only produced for names that already
-    // contain an underscore; the single form for names that do not.
-    if underscored != name.contains('_') {
         return None;
     }
     Some(FortranSymbol {
@@ -176,10 +156,20 @@ mod test {
         }
     }
 
+    /// Procedure names ending in `_<digits>` keep those digits. These four
+    /// symbols are verbatim gfortran 12 output for the procedures of the
+    /// same name in `contrib/fixtures/fortran/corpus.f90`.
     #[test]
-    fn gfortran_renamed_length_suffix() {
-        let parsed = parse_module_symbol("__my_module_MOD_my_sub_12").expect("parses");
-        assert_eq!(parsed.render(), "my_module::my_sub");
+    fn procedure_names_ending_in_digits_are_preserved() {
+        for (symbol, expected) in [
+            ("__numerics_MOD_interp_3", "numerics::interp_3"),
+            ("__numerics_MOD_step_12", "numerics::step_12"),
+            ("__numerics_MOD_solve_2d", "numerics::solve_2d"),
+            ("__numerics_MOD_plain", "numerics::plain"),
+        ] {
+            let parsed = parse_module_symbol(symbol).expect("module symbol parses");
+            assert_eq!(parsed.render(), expected, "for {symbol}");
+        }
     }
 
     #[test]
@@ -202,10 +192,28 @@ mod test {
                 .as_deref(),
             Some("my_sub")
         );
-        // A single trailing underscore on an underscored name is not the
-        // g77 convention; same for a doubled one on an underscore-free name.
-        assert_eq!(parse_plain_symbol("my_sub_"), None);
-        assert_eq!(parse_plain_symbol("init__"), None);
+        // gfortran appends a single underscore even to names that already
+        // contain one — `standalone_` and `two_words_` are verbatim
+        // gfortran 12 output for the fixture's bare subprograms, so a single
+        // trailing underscore on an underscored name must be accepted.
+        assert_eq!(
+            parse_plain_symbol("standalone_")
+                .map(|s| s.render())
+                .as_deref(),
+            Some("standalone")
+        );
+        assert_eq!(
+            parse_plain_symbol("two_words_")
+                .map(|s| s.render())
+                .as_deref(),
+            Some("two_words")
+        );
+        // `init__` is not the doubled form (the inner name has no
+        // underscore): it is a subprogram genuinely named `init_`.
+        assert_eq!(
+            parse_plain_symbol("init__").map(|s| s.render()).as_deref(),
+            Some("init_")
+        );
     }
 
     #[test]

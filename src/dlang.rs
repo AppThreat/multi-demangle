@@ -1098,15 +1098,19 @@ impl<'a> Demangler<'a> {
             return !self.failed;
         }
 
-        // Type modifiers prefix the rendering of the modified type.
+        // Type modifiers prefix the rendering of the modified type. Only the
+        // text this call appends may be wrapped: `out` can already carry a
+        // caller's prefix (a parameter storage class such as `ref `), and
+        // wrapping that too would render `Kx S` as `const(ref S)` instead of
+        // `ref const(S)`.
         let mut mods = Vec::new();
         if self.parse_type_modifiers(&mut mods) {
+            let start = out.len();
             if !self.parse_type(out) {
                 return false;
             }
-            let prefixed = format!("{}({})", mods.join(" "), out);
-            out.clear();
-            out.push_str(&prefixed);
+            let inner = out.split_off(start);
+            out.push_str(&format!("{}({})", mods.join(" "), inner));
             return true;
         }
 
@@ -1120,34 +1124,46 @@ impl<'a> Demangler<'a> {
                 out.push_str("[]");
             }
             Some(b'G') => {
-                // Static array: element type first, then the dimension.
+                // Static array: `G <dimension> <element type>`, rendered
+                // `<element type>[<dimension>]`. The dimension comes first in
+                // the mangling — `G4i` is `int[4]` (verified against
+                // `c++filt -s dlang` on gdc/ldc output).
                 self.pos += 1;
-                if !self.parse_type(out) {
-                    return false;
-                }
                 let Some(dim) = self.decode_number() else {
                     return false;
                 };
+                if !self.parse_type(out) {
+                    return false;
+                }
                 out.push('[');
                 out.push_str(&dim.to_string());
                 out.push(']');
             }
             Some(b'H') => {
+                // Associative array `H <key> <value>` -> `value[key]`. As
+                // above, only the value text appended here is rewritten.
                 self.pos += 1;
                 let mut key = String::new();
+                let start = out.len();
                 if !self.parse_type(&mut key) || !self.parse_type(out) {
                     return false;
                 }
-                let rendered = format!("{out}[{key}]");
-                out.clear();
-                out.push_str(&rendered);
+                let value = out.split_off(start);
+                out.push_str(&format!("{value}[{key}]"));
             }
             Some(b'P') => {
                 self.pos += 1;
+                // `P` applied to a function type is how D spells a function
+                // pointer (`PFiZi` is `int function(int)`). The function
+                // rendering already reads as a pointer, so appending `*`
+                // would produce `int function(int)*`.
+                let points_to_function = self.peek() == Some(b'F');
                 if !self.parse_type(out) {
                     return false;
                 }
-                out.push('*');
+                if !points_to_function {
+                    out.push('*');
+                }
             }
             Some(b'R') => {
                 self.pos += 1;
@@ -1621,7 +1637,9 @@ mod test {
         );
         assert_eq!(dem("_D6module4funcFPiaZv"), "module.func(int*, char)");
         assert_eq!(dem("_D6module4funcFAiZv"), "module.func(int[])");
-        assert_eq!(dem("_D6module4funcFGi3Zv"), "module.func(int[3])");
+        // Static arrays mangle the dimension before the element type;
+        // `c++filt -s dlang` rejects the reverse spelling outright.
+        assert_eq!(dem("_D6module4funcFG3iZv"), "module.func(int[3])");
         assert_eq!(dem("_D6module4funcFHiiZv"), "module.func(int[int])");
         assert_eq!(dem("_D6module4funcFxAiZv"), "module.func(const(int[]))");
         assert_eq!(dem("_D6module4funcFNbNafZv"), "module.func(float)");
@@ -1735,10 +1753,40 @@ mod test {
         assert_eq!(dem("_D6module4dataPAi"), "int[]* module.data");
     }
 
+    /// Symbols taken verbatim from `nm` over ldc2/gdc output for
+    /// `contrib/fixtures/dlang/corpus.d`, with the expected rendering
+    /// cross-checked against `c++filt -s dlang` (libiberty's independent D
+    /// demangler). Unlike hand-written cases these cannot encode a grammar
+    /// the compiler does not actually emit.
+    #[test]
+    fn real_compiler_output() {
+        assert_eq!(
+            dem("_D6corpus11staticArrayFG4iZQe"),
+            "corpus.staticArray(int[4])"
+        );
+        assert_eq!(
+            dem("_D6corpus20takesFunctionPointerFPFiZiZv"),
+            "corpus.takesFunctionPointer(int function(int))"
+        );
+        assert_eq!(
+            dem("_D6corpus14nestedCompoundFHAyaAxPiZv"),
+            "corpus.nestedCompound(const(int*)[][immutable(char)[]])"
+        );
+        assert_eq!(
+            dem("_D6corpus10assocArrayFHAyaiZQg"),
+            "corpus.assocArray(int[immutable(char)[]])"
+        );
+        assert_eq!(
+            dem("_D6corpus5Outer6Middle5Inner12deeplyNestedMFZv"),
+            "corpus.Outer.Middle.Inner.deeplyNested()"
+        );
+    }
+
     #[test]
     fn compound_types_as_values() {
-        // A variable of function-pointer type.
-        assert_eq!(dem("_D6module2fpPFiZi"), "int function(int)* module.fp");
+        // A variable of function-pointer type. `P` over a function type is
+        // already the pointer spelling, so no trailing `*` is added.
+        assert_eq!(dem("_D6module2fpPFiZi"), "int function(int) module.fp");
         // Delegate parameter.
         assert_eq!(
             dem("_D6module3fooFDFiZvZv"),

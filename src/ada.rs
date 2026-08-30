@@ -175,10 +175,29 @@ fn plausible_charset(symbol: &str) -> bool {
         .all(|b| b.is_ascii_alphanumeric() || b == b'_')
 }
 
+/// Strips GCC's `.<digits>` local-symbol suffix, which it appends to
+/// function-local entities that were promoted to file scope — GNAT emits
+/// `corpus__compute__outer_block__inner.0` for a procedure nested inside a
+/// named block. The suffix is a linker disambiguator, not part of the Ada
+/// name, and `c++filt -s gnat` drops it the same way.
+fn strip_local_suffix(symbol: &str) -> &str {
+    match symbol.rsplit_once('.') {
+        Some((base, digits))
+            if !base.is_empty()
+                && !digits.is_empty()
+                && digits.bytes().all(|b| b.is_ascii_digit()) =>
+        {
+            base
+        }
+        _ => symbol,
+    }
+}
+
 /// Cheap detection predicate: GNAT names are ASCII identifiers carrying a
 /// `__` separator (or the `_ada_` prefix, or an operator name). The demangler
 /// below does the strict validation.
 pub(crate) fn is_maybe_ada(symbol: &str) -> bool {
+    let symbol = strip_local_suffix(symbol);
     if !plausible_charset(symbol) || symbol.len() < 3 {
         return false;
     }
@@ -194,7 +213,7 @@ pub(crate) fn is_maybe_ada(symbol: &str) -> bool {
 
 /// Parses a GNAT symbol, or returns `None` when it does not validate.
 pub(crate) fn parse(symbol: &str) -> Option<AdaSymbol> {
-    let bytes = symbol.as_bytes();
+    let bytes = strip_local_suffix(symbol).as_bytes();
 
     // Library-level subprograms carry the `_ada_` prefix.
     let bytes = bytes.strip_prefix(b"_ada_").unwrap_or(bytes);
@@ -310,6 +329,21 @@ mod test {
         assert_eq!(dem("Oeq"), "\"=\"");
         assert_eq!(dem("module__Oadd"), "module.\"+\"");
         assert_eq!(dem("module__Ole"), "module.\"<=\"");
+    }
+
+    /// GNAT output for `contrib/fixtures/ada/corpus.adb`, cross-checked
+    /// against `c++filt -s gnat`.
+    #[test]
+    fn gcc_local_symbol_suffix() {
+        assert_eq!(
+            dem("corpus__compute__outer_block__inner.0"),
+            "corpus.compute.outer_block.inner"
+        );
+        // The suffix is only stripped when it is entirely digits.
+        assert_eq!(
+            demangle("corpus__proc.a", DemangleOptions::complete()),
+            None
+        );
     }
 
     #[test]

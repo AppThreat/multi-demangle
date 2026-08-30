@@ -14,8 +14,13 @@ fn test_fortran_module_symbols() {
         ("m_MOD_foo", "m::foo"),
         // Some ABIs omit the leading underscores.
         ("my_module_MOD_my_proc", "my_module::my_proc"),
-        // Renamed symbols carry a length suffix.
-        ("__my_module_MOD_my_sub_12", "my_module::my_sub"),
+        // The procedure part is verbatim: gfortran appends no length or
+        // disambiguation suffix, so names ending in digits keep them.
+        // These are gfortran 12 output for the identically named procedures
+        // in contrib/fixtures/fortran/corpus.f90.
+        ("__numerics_MOD_interp_3", "numerics::interp_3"),
+        ("__numerics_MOD_step_12", "numerics::step_12"),
+        ("__numerics_MOD_solve_2d", "numerics::solve_2d"),
         // Intel ifort/ifx.
         ("my_module_mp_my_proc_", "my_module::my_proc"),
         ("my_module_mp_my_proc", "my_module::my_proc"),
@@ -62,14 +67,17 @@ fn test_fortran_plain_form_is_explicit_only() {
         demangle_as("fortran", "my_sub__", DemangleOptions::complete()),
         Some("my_sub".to_string())
     );
-    // Convention violations do not demangle even when explicit.
+    // gfortran appends a single underscore even to names that already
+    // contain one, so this is the mangling of `subroutine two_words`.
     assert_eq!(
-        demangle_as("fortran", "my_sub_", DemangleOptions::complete()),
-        None
+        demangle_as("fortran", "two_words_", DemangleOptions::complete()),
+        Some("two_words".to_string())
     );
+    // `init__` is not the g77 doubled form (the inner name carries no
+    // underscore): it is a subprogram genuinely named `init_`.
     assert_eq!(
         demangle_as("fortran", "init__", DemangleOptions::complete()),
-        None
+        Some("init_".to_string())
     );
     assert_eq!(
         demangle_as("fortran", "__", DemangleOptions::complete()),
