@@ -387,6 +387,36 @@ pub fn normalize_symbol(symbol: &str) -> Cow<'_, str> {
     Normalizer::display().normalize(symbol)
 }
 
+/// Whether `symbol` has the shape of a GNU v2 or CodeWarrior C++ mangling.
+///
+/// Neither scheme has a reserved prefix — `do_thing__C6StupidRC6StupidT1` and
+/// `BuildLight__9CGuiLightCFv` are the whole encoding — so both are detected
+/// by actually running their demangler, which [`looks_mangled`] promises not
+/// to do. What is cheap to spot is the join: the encoded type follows `__`
+/// and always begins with a qualifier letter (`F`, `C`, `Q`, ...) or a
+/// name-length digit. Requiring an uppercase letter or digit there is what
+/// separates these from the far more numerous C symbols that merely contain
+/// `__` (`_uv__io_close`), which is why this is not simply a `__` test.
+fn is_maybe_gnuv2_shape(symbol: &str) -> bool {
+    let bytes = symbol.as_bytes();
+    // Plain identifier charset only; the real schemes never use anything else
+    // here, and the restriction keeps this off Swift's `_symbolic ...` blobs.
+    if bytes.is_empty()
+        || !(bytes[0].is_ascii_alphabetic() || bytes[0] == b'_')
+        || !bytes
+            .iter()
+            .all(|b| b.is_ascii_alphanumeric() || *b == b'_')
+    {
+        return false;
+    }
+    bytes.windows(4).any(|w| {
+        w[0].is_ascii_alphanumeric()
+            && w[1] == b'_'
+            && w[2] == b'_'
+            && (w[3].is_ascii_uppercase() || w[3].is_ascii_digit())
+    })
+}
+
 /// Cheaply checks whether a symbol looks mangled in any known scheme.
 ///
 /// This is a deliberate over-approximation based on mangling prefixes only:
@@ -418,8 +448,11 @@ pub fn looks_mangled(symbol: &str) -> bool {
         || is_scala_native_prefix(symbol)
         || crate::is_maybe_dlang(symbol)
         || crate::is_maybe_kotlin_native(symbol)
-        || crate::is_maybe_ada(symbol)
-        || crate::is_maybe_fortran(symbol)
+        || is_maybe_gnuv2_shape(symbol)
+        // Ada and Fortran are deliberately absent: their manglings are flat
+        // identifier shapes that describe ordinary C symbols just as well,
+        // so they are reachable only through an explicit language request.
+        // See [`crate::demangle_as`].
         // Legacy Rust symbols that only partially survived a previous
         // demangling pass keep their `$LT$`-style escapes; upstream
         // consumers gate on this too.
@@ -451,16 +484,19 @@ pub fn detect_language(symbol: &str) -> Option<&'static str> {
     }
     // Languages without a `symbolic_common::Language` variant are recognized
     // by their (unambiguous) predicates, independent of which backends are
-    // compiled in. Ada's check runs a full parse: its `__`-separator
-    // heuristic is the loosest of the set.
+    // compiled in.
+    //
+    // Ada and Fortran are excluded on purpose. Neither mangling has a
+    // reserved prefix: GNAT's `pkg__sub` and Intel's `mod_mp_proc` are just
+    // flat identifiers with a separator, a shape that describes an enormous
+    // number of ordinary C symbols (`_uv__io_close`, `ossl_rsa_mp_coeff_names`),
+    // and the C ones outnumber the Ada and Fortran ones by orders of
+    // magnitude in any real symbol table. Guessing wrong is destructive — it
+    // rewrites a correct C name into a plausible-looking wrong one — so both
+    // are reachable only when the caller names the language. See
+    // [`crate::demangle_as`].
     if crate::is_maybe_kotlin_native(symbol) {
         return Some("kotlin-native");
-    }
-    if crate::is_maybe_fortran(symbol) {
-        return Some("fortran");
-    }
-    if is_ada_symbol(symbol) {
-        return Some("ada");
     }
     if is_scala_native_symbol(symbol) {
         return Some("scala-native");
@@ -484,21 +520,6 @@ pub fn language_name(language: Language) -> Option<&'static str> {
 /// only by demangling, mirroring the fallback in [`Demangle::demangle`].
 pub fn is_scala_native_symbol(symbol: &str) -> bool {
     is_scala_native_symbol_impl(symbol)
-}
-
-/// Whether `symbol` parses as an Ada (GNAT) symbol: the charset/prefix
-/// predicate, validated by a full parse when the `ada` backend is compiled
-/// in.
-fn is_ada_symbol(symbol: &str) -> bool {
-    // The parse alone accepts any plain identifier; the separator/operator
-    // predicate is what makes a symbol *maybe Ada*.
-    if !crate::is_maybe_ada(symbol) {
-        return false;
-    }
-    #[cfg(feature = "ada")]
-    return crate::ada::parse(symbol).is_some();
-    #[cfg(not(feature = "ada"))]
-    return true;
 }
 
 /// Classifies a raw symbol without demangling it.
@@ -569,12 +590,10 @@ pub fn classify_symbol(symbol: &str) -> SymbolStatus {
     if crate::is_maybe_kotlin_native(symbol) {
         return unknown_language_status(cfg!(feature = "kotlin-native"));
     }
-    if crate::is_maybe_fortran(symbol) {
-        return unknown_language_status(cfg!(feature = "fortran"));
-    }
-    if is_ada_symbol(symbol) {
-        return unknown_language_status(cfg!(feature = "ada"));
-    }
+    // Ada and Fortran are not classified here; both are explicit-request-only
+    // (see [`detect_language`]), so a symbol whose only claim is one of their
+    // shapes is reported as unmangled rather than as a language nothing will
+    // auto-demangle.
     // Scala Native has no `Language` variant; prefix-matching symbols its
     // demangler accepts are reported as mangled in an unnamed language.
     if is_scala_native_symbol(symbol) {

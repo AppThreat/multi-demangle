@@ -36,12 +36,14 @@ fn test_looks_mangled() {
     assert!(looks_mangled("_OBJC_CLASS_$_Foo"));
     assert!(looks_mangled("l_OBJC_SELECTOR_REFERENCES_12"));
     assert!(looks_mangled("_SM17java.lang.IntegerD7compareiiiEo"));
-    // D, Kotlin/Native, Ada, and Fortran module symbols.
+    // D and Kotlin/Native.
     assert!(looks_mangled("_D6module4funcFZv"));
     assert!(looks_mangled("_kfun:com.example.Foo.bar(kotlin.String)"));
-    assert!(looks_mangled("ada__exceptions__raiseXn"));
-    assert!(looks_mangled("__my_module_MOD_my_proc"));
-    assert!(looks_mangled("my_module_mp_my_proc_"));
+    // Ada and Fortran are explicit-request-only: their shapes describe
+    // ordinary C symbols just as well, so they are never flagged as mangled.
+    assert!(!looks_mangled("ada__exceptions__raiseXn"));
+    assert!(!looks_mangled("__my_module_MOD_my_proc"));
+    assert!(!looks_mangled("my_module_mp_my_proc_"));
     // Partial legacy Rust escapes (the upstream consumer gates on `$LT$`).
     assert!(looks_mangled("impl$LT$T$GT$display"));
 
@@ -56,11 +58,13 @@ fn test_looks_mangled() {
     assert!(!looks_mangled("hello"));
     assert!(!looks_mangled("libc.so.6"));
     assert!(!looks_mangled("GCC_except_table0"));
-    // GNU v2 and CodeWarrior still have no stable prefix of their own, but
-    // names carrying `__` separators now trip the Ada heuristic (an
-    // intentional over-approximation: looks-mangled makes no correctness
-    // promise).
+    // GNU v2 and CodeWarrior have no stable prefix of their own; they are
+    // spotted by their `name__<qualifier-or-length>` join, which is what
+    // separates them from plain C symbols that merely contain `__`.
     assert!(looks_mangled("do_thing__C6StupidRC6StupidT1"));
+    assert!(looks_mangled("BuildLight__9CGuiLightCFv"));
+    assert!(!looks_mangled("_uv__io_close"));
+    assert!(!looks_mangled("_thread_db___pthread_keys"));
 }
 
 #[test]
@@ -83,13 +87,14 @@ fn test_detect_language() {
         detect_language("_kfun:com.example.Foo.bar(kotlin.String)"),
         Some("kotlin-native")
     );
+    // Ada and Fortran are explicit-request-only; nothing about their shape
+    // distinguishes them from C, so detection never claims them.
     assert_eq!(
         detect_language("ada__exceptions__last_chance_handlerXn"),
-        Some("ada")
+        None
     );
-    assert_eq!(detect_language("__my_module_MOD_my_proc"), Some("fortran"));
-    assert_eq!(detect_language("my_module_mp_my_proc_"), Some("fortran"));
-    // The plain g77 form is not detected (it collides with C symbols).
+    assert_eq!(detect_language("__my_module_MOD_my_proc"), None);
+    assert_eq!(detect_language("my_module_mp_my_proc_"), None);
     assert_eq!(detect_language("init_"), None);
     assert_eq!(detect_language("libc.so.6"), None);
     assert_eq!(detect_language("hello"), None);

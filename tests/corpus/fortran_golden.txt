@@ -3,11 +3,14 @@
 # No demangling oracle exists for Fortran, so the authority here is a
 # round-trip against the fixture: contrib/fixtures/fortran/corpus.f90
 # declares each module entity by name, gfortran 12.2 emits the symbol in
-# the first column, and the rendering must spell the source name. The
-# `<rejected>` lines pin the auto-detection policy: the plain g77 form
-# (`standalone_`, `two_words_`) is explicit-only because any C symbol can
-# end in `_`, and `main`/`MAIN__`/`options.0.0` are compiler artifacts no
-# Fortran backend should claim.
+# the first column, and the rendering must spell the source name.
+#
+# Fortran is explicit-request-only: its manglings are flat identifier shapes
+# that describe ordinary C symbols just as well, so auto-detection never
+# claims them and this tier is rendered through `demangle_as("fortran", ...)`.
+# Under that explicit request the plain g77 form (`standalone_`,
+# `two_words_`, `MAIN__`) does demangle. The remaining `<rejected>` lines pin
+# the artifacts no Fortran backend should claim even when asked.
 #
 # Regenerate by hand from the fixture when it changes; see
 # tests/test_new_language_corpus.rs.
@@ -23,8 +26,8 @@ __numerics_MOD_solve_2d	numerics::solve_2d
 __numerics_MOD_step_12	numerics::step_12
 __grid2_MOD_a_very_long_procedure_name_that_goes_on_for_a_while	grid2::a_very_long_procedure_name_that_goes_on_for_a_while
 __parent_mod_MOD_child_proc	parent_mod::child_proc
-standalone_	<rejected>
-two_words_	<rejected>
+standalone_	standalone
+two_words_	two_words
 main	<rejected>
-MAIN__	<rejected>
+MAIN__	MAIN_
 options.0.0	<rejected>

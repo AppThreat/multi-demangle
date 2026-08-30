@@ -18,9 +18,16 @@
 //! would corrupt every procedure whose name ends in digits. Verified against
 //! gfortran 12 via `contrib/` — see `contrib/fixtures/fortran/corpus.f90`.
 //!
-//! The plain g77 form `<name>_` is demangled only when explicitly requested
-//! through [`crate::demangle_as`]: any C symbol may end in `_`, so
-//! auto-detection never claims that form.
+//! # Auto-detection
+//!
+//! Fortran is **explicit-request-only**. None of these forms has a reserved
+//! prefix: `mod_MOD_proc` and `mod_mp_proc` are flat identifiers with a
+//! separator, and `_mp_` in particular is ordinary in C, where it routinely
+//! means "multi-precision" or "multi-party" — OpenSSL's multi-prime RSA
+//! tables are spelled `ossl_rsa_mp_coeff_names`. Claiming these by shape
+//! rewrote correct C names into plausible-looking wrong ones, so every
+//! Fortran form — including the plain g77 `<name>_`, which any C symbol can
+//! also spell — is reached only through [`crate::demangle_as`].
 //!
 //! References: [CMake FortranCInterface](https://cmake.org/cmake/help/latest/module/FortranCInterface.html),
 //! [gcc/fortran/misc.c `gfc_mangle_name`](https://github.com/gcc-mirror/gcc/blob/master/gcc/fortran/misc.c).

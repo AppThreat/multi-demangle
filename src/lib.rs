@@ -7,11 +7,28 @@
 //! - Scala Native via the unknown-language fallback (`features = ["scala-native"]`)
 //! - Swift (up to Swift 6.3.3) (`features = ["swift"]`)
 //! - D (`features = ["dlang"]`)
-//! - Fortran, gfortran and Intel module symbols; the plain g77 `name_` form
-//!   is explicit-only (`features = ["fortran"]`)
+//! - Fortran, gfortran and Intel module symbols plus the plain g77 `name_`
+//!   form — explicit-request-only (`features = ["fortran"]`)
 //! - Kotlin/Native (`features = ["kotlin-native"]`)
-//! - Ada / GNAT (`features = ["ada"]`)
+//! - Ada / GNAT — explicit-request-only (`features = ["ada"]`)
 //! - ObjC (selectors plus runtime metadata symbol detection)
+//!
+//! # Ada and Fortran are opt-in
+//!
+//! Every other scheme above has a reserved prefix (`_Z`, `_R`, `$s`, `_D`,
+//! `kfun:`, `?`) that no ordinary C symbol produces, so detecting it by shape
+//! is safe. Ada and Fortran have none: GNAT emits `pkg__sub` and Intel emits
+//! `mod_mp_proc`, flat identifiers with a separator, which is also how a
+//! great many C projects spell an internal function — `_uv__io_close`,
+//! `llhttp__debug`, `ossl_rsa_mp_coeff_names`. C symbols outnumber Ada and
+//! Fortran ones by orders of magnitude in any real symbol table, and
+//! guessing wrong is destructive: it rewrites a correct name into a
+//! plausible-looking wrong one instead of leaving it alone.
+//!
+//! Both are therefore reached only through [`demangle_as`] (or `--language`
+//! on the CLI, or `language=` from Python); [`detect_language`],
+//! [`looks_mangled`], [`classify_symbol`], and [`Demangle::demangle`] never
+//! claim them.
 //!
 //! As the demangling schemes for the languages are different, the supported demangling features are
 //! inconsistent. For example, argument types were not encoded in legacy Rust mangling and thus not
@@ -264,19 +281,6 @@ pub(crate) fn is_maybe_kotlin_native(ident: &str) -> bool {
     ident.starts_with("_kfun:") || ident.starts_with("__kfun:") || ident.starts_with("kfun:")
 }
 
-/// Detects Ada (GNAT) symbols: ASCII identifiers with `__` separators, the
-/// `_ada_` prefix, or an operator name.
-pub(crate) fn is_maybe_ada(ident: &str) -> bool {
-    ada::is_maybe_ada(ident)
-}
-
-/// Detects the unambiguous Fortran module forms (`__mod_MOD_proc`,
-/// `mod_MOD_proc`, `mod_mp_proc_`). The plain g77 `name_` form is
-/// deliberately not detected; it is reachable only through [`demangle_as`].
-pub(crate) fn is_maybe_fortran(ident: &str) -> bool {
-    fortran::parse_module_symbol(ident).is_some()
-}
-
 /// Detects Objective-C runtime metadata symbols: class/metaclass/ivar
 /// objects and emitted selector references. These dominate non-Swift Mach-O
 /// symbol tables.
@@ -413,20 +417,6 @@ fn try_demangle_ada(ident: &str, opts: DemangleOptions) -> Option<String> {
 
 #[cfg(not(feature = "ada"))]
 fn try_demangle_ada(_ident: &str, _opts: DemangleOptions) -> Option<String> {
-    None
-}
-
-/// Demangles the unambiguous Fortran module forms. The plain g77 form is not
-/// included here; auto-detection never claims it.
-#[cfg(feature = "fortran")]
-fn try_demangle_fortran(ident: &str, _opts: DemangleOptions) -> Option<String> {
-    // The mangling carries no type information, so the options have no
-    // effect on the rendering.
-    fortran::parse_module_symbol(ident).map(|s| s.render())
-}
-
-#[cfg(not(feature = "fortran"))]
-fn try_demangle_fortran(_ident: &str, _opts: DemangleOptions) -> Option<String> {
     None
 }
 
@@ -1149,14 +1139,13 @@ impl Demangle for Name<'_> {
             Language::Swift => try_demangle_swift(self.as_str(), opts),
             Language::D => try_demangle_dlang(self.as_str(), opts),
             // Unknown languages may still use one of the string-named
-            // schemes: Scala Native, Kotlin/Native, a Fortran module symbol,
-            // or Ada. Ada goes last, and must stay last: its `__`-separator
-            // heuristic is the loosest of the set, so the stricter schemes
-            // get first refusal. This order matches [`detect_language`].
+            // schemes: Scala Native or Kotlin/Native. Ada and Fortran are
+            // absent by design — their manglings are flat identifier shapes
+            // that fit ordinary C symbols just as well, so they are demangled
+            // only when the caller names the language. This matches
+            // [`detect_language`]; see [`demangle_as`].
             _ => try_demangle_scala_native(self.as_str(), opts)
-                .or_else(|| try_demangle_kotlin_native(self.as_str(), opts))
-                .or_else(|| try_demangle_fortran(self.as_str(), opts))
-                .or_else(|| try_demangle_ada(self.as_str(), opts)),
+                .or_else(|| try_demangle_kotlin_native(self.as_str(), opts)),
         }
     }
 
@@ -1605,6 +1594,11 @@ use pyo3::prelude::*;
 ///   the symbol is not mangled.
 /// - `classify_symbol(mangled)` — the classification dict without demangling.
 /// - `detect_language(mangled)` — the short language name, or `None`.
+///
+/// `demangle_symbol` and `demangle_symbols` take a keyword-only `language=`
+/// that skips detection and demangles as that language. It is the only way
+/// to reach Ada and Fortran, whose manglings are flat identifier shapes that
+/// describe ordinary C symbols just as well and so are never auto-detected.
 /// - `looks_mangled(mangled)` — cheap prefix-based mangling check.
 /// - `normalize_symbol(mangled, normalizer=None)` — apply hygiene passes.
 #[cfg(feature = "extension-module")]
@@ -1612,8 +1606,8 @@ use pyo3::prelude::*;
 mod multi_demangle {
     // Import necessary types from the parent `lib.rs` module
     use super::{
-        classify_symbol as classify_symbol_impl, demangle_many, demangle_one, demangle_unique_with,
-        detect_language as detect_language_impl, language_name,
+        classify_symbol as classify_symbol_impl, demangle_as, demangle_many, demangle_one,
+        demangle_unique_with, detect_language as detect_language_impl, language_name,
         looks_mangled as looks_mangled_impl, normalize_or_borrow, Decoration, Demangle,
         DemangleOptions, DemangledInfo as StructuredInfo, Name, Normalizer, SymbolStatus,
     };
@@ -1734,7 +1728,18 @@ mod multi_demangle {
         opts: DemangleOptions,
         normalize: bool,
         normalizer: &Normalizer,
+        language: Option<&str>,
     ) -> Cow<'a, str> {
+        // An explicit language bypasses detection entirely, which is the only
+        // way to reach the schemes that are too ambiguous to auto-detect
+        // (Ada, Fortran).
+        if let Some(language) = language {
+            return match demangle_as(language, sym, opts) {
+                Some(demangled) => Cow::Owned(demangled),
+                None if normalize => normalize_or_borrow(normalizer, sym),
+                None => Cow::Borrowed(sym),
+            };
+        }
         if normalize {
             match Name::from(sym).demangle(opts) {
                 Some(demangled) => Cow::Owned(demangled),
@@ -1751,10 +1756,27 @@ mod multi_demangle {
     /// and attempts to demangle it. With `normalize=True` on the options, a
     /// symbol that cannot be demangled goes through the display hygiene
     /// passes instead of being returned unchanged.
+    ///
+    /// Pass `language` to skip detection and demangle as that language
+    /// (`"cpp"`, `"rust"`, `"swift"`, `"objc"`, `"objcpp"`, `"d"`,
+    /// `"kotlin-native"`, `"scala-native"`, `"ada"`, `"fortran"`). This is
+    /// the only way to demangle Ada and Fortran: their manglings are flat
+    /// identifier shapes (`pkg__sub`, `mod_mp_proc`) that describe ordinary
+    /// C symbols just as well, so auto-detection never claims them. Use it
+    /// when you already know the binary's source language; a symbol the
+    /// named language rejects is returned unchanged.
     #[pyfunction]
-    #[pyo3(signature = (mangled, options = None))]
-    fn demangle_symbol(mangled: &str, options: Option<PyDemangleOptions>) -> String {
+    #[pyo3(signature = (mangled, options = None, *, language = None))]
+    fn demangle_symbol(
+        mangled: &str,
+        options: Option<PyDemangleOptions>,
+        language: Option<&str>,
+    ) -> String {
         let (opts, normalize) = resolve_options(options);
+        if language.is_some() {
+            return demangle_py_one(mangled, opts, normalize, &Normalizer::display(), language)
+                .into_owned();
+        }
         let name = Name::from(mangled);
         if normalize {
             name.try_demangle_normalized(opts, &Normalizer::display())
@@ -1783,12 +1805,13 @@ mod multi_demangle {
     /// to the caller. Pass `unique=False` to demangle every position
     /// independently.
     #[pyfunction]
-    #[pyo3(signature = (symbols, options = None, *, unique = true))]
+    #[pyo3(signature = (symbols, options = None, *, unique = true, language = None))]
     fn demangle_symbols<'py>(
         py: Python<'py>,
         symbols: &Bound<'py, PyAny>,
         options: Option<PyDemangleOptions>,
         unique: bool,
+        language: Option<&str>,
     ) -> PyResult<Bound<'py, PyList>> {
         // A bare string would iterate per character; reject it explicitly.
         if symbols.is_instance_of::<PyString>() {
@@ -1808,7 +1831,7 @@ mod multi_demangle {
         let (opts, normalize) = resolve_options(options);
         let normalizer = Normalizer::display();
         let (results, assignment) = py.detach(move || {
-            let demangle_fn = |sym| demangle_py_one(sym, opts, normalize, &normalizer);
+            let demangle_fn = |sym| demangle_py_one(sym, opts, normalize, &normalizer, language);
             if unique {
                 demangle_unique_with(&refs, &demangle_fn)
             } else {
