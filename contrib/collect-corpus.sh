@@ -107,10 +107,12 @@ classify_cmp() {
 # informative; *acceptance* differences (we reject what c++filt demangles)
 # are functional gaps.
 diff_lang() {
-    local lang="$1" filter fmt
+    local lang="$1" filter fmt ours
+    # `ours` is this crate's --language value; Ada (like Fortran) is opt-in
+    # and is not auto-detected, so the differential must request it.
     case "$lang" in
-        dlang) filter='^_D'; fmt=dlang ;;
-        ada)   filter='.'; fmt=gnat ;;
+        dlang) filter='^_D'; fmt=dlang; ours=d ;;
+        ada)   filter='.'; fmt=gnat; ours=ada ;;
         *) echo "no c++filt oracle for $lang" >&2; return 1 ;;
     esac
 
@@ -121,7 +123,7 @@ diff_lang() {
     docker run --rm -i --entrypoint c++filt "$GNU_IMAGE" -s "$fmt" <"$tmp/syms.txt" >"$tmp/gnu.txt"
     : >"$tmp/ours.txt"
     while IFS= read -r s; do
-        "$CLI" -- "$s" 2>/dev/null || echo "$s"
+        "$CLI" --language "$ours" -- "$s" 2>/dev/null || echo "$s"
     done <"$tmp/syms.txt" >>"$tmp/ours.txt"
 
     paste -d'\t' "$tmp/syms.txt" "$tmp/gnu.txt" "$tmp/ours.txt" >"$tmp/cmp.tsv"
