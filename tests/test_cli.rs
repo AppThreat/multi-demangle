@@ -275,19 +275,40 @@ fn list_languages_prints_languages() {
 fn new_language_backends_demangle() {
     for (symbol, expected) in [
         ("_D6module4funcFZv", "module.func()"),
-        ("__my_module_MOD_my_proc", "my_module::my_proc"),
         (
             "_kfun:com.example.Foo.bar(kotlin.String;kotlin.Int)",
             "com.example.Foo.bar(String, Int)",
-        ),
-        (
-            "ada__exceptions__last_chance_handlerXn",
-            "ada.exceptions.last_chance_handler",
         ),
         // ObjC runtime metadata passes through unchanged.
         ("_OBJC_CLASS_$_Foo", "_OBJC_CLASS_$_Foo"),
     ] {
         let out = run(&[symbol], None);
+        assert_eq!(out.status, 0, "for {symbol}");
+        assert_eq!(out.stdout, format!("{expected}\n"), "for {symbol}");
+    }
+}
+
+#[test]
+fn ada_and_fortran_need_an_explicit_language() {
+    // Both manglings are flat identifier shapes that fit ordinary C symbols
+    // just as well, so auto-detection passes them through untouched...
+    for symbol in [
+        "ada__exceptions__last_chance_handlerXn",
+        "__my_module_MOD_my_proc",
+    ] {
+        let out = run(&[symbol], None);
+        assert_eq!(out.stdout, format!("{symbol}\n"), "for {symbol}");
+    }
+    // ...and `--language` is what reaches the backend.
+    for (language, symbol, expected) in [
+        (
+            "ada",
+            "ada__exceptions__last_chance_handlerXn",
+            "ada.exceptions.last_chance_handler",
+        ),
+        ("fortran", "__my_module_MOD_my_proc", "my_module::my_proc"),
+    ] {
+        let out = run(&["--language", language, symbol], None);
         assert_eq!(out.status, 0, "for {symbol}");
         assert_eq!(out.stdout, format!("{expected}\n"), "for {symbol}");
     }

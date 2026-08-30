@@ -14,9 +14,9 @@ Currently supported languages are:
 | Scala Native  | Via the unknown-language fallback (symbols prefixed `_SM`)                                                         | `scala-native`                        |
 | Swift         | Up to Swift 6.3.3, using a vendored Swift demangler                                                                | `swift`                               |
 | D             | D ABI mangling (`_D…`), incl. function types and templates                                                         | `dlang`                               |
-| Fortran       | gfortran `mod_MOD_proc` and Intel `mod_mp_proc_`; the plain g77 `name_` form only via explicit request (see below) | `fortran`                             |
+| Fortran       | gfortran `mod_MOD_proc`, Intel `mod_mp_proc_`, and the plain g77 `name_` form — **explicit request only** (see below)  | `fortran`                             |
 | Kotlin/Native | `_kfun:` symbols with parameter types                                                                              | `kotlin-native`                       |
-| Ada (GNAT)    | `pkg__sub` encoding with escapes, operators, and markers                                                           | `ada`                                 |
+| Ada (GNAT)    | `pkg__sub` encoding with escapes, operators, and markers — **explicit request only** (see below)                   | `ada`                                 |
 | ObjC          | Selectors plus runtime metadata symbols (`_OBJC_CLASS_$_…`, `_OBJC_IVAR_$_…`, selector references)                 | always on                             |
 
 All of the above features are enabled by default. Disabling them trims the
@@ -159,17 +159,22 @@ assert_eq!(
 
 Fortran module symbols demangle to `module::proc` for both gfortran
 (`__mod_MOD_proc`, with or without platform underscores) and Intel
-(`mod_mp_proc_`) conventions. The plain g77 form (`init_`, `my_sub__`) is
-_explicit-only_: any C symbol can end in `_`, so auto-detection never claims
-it. Use `demangle_as("fortran", …)` (Rust) or `--language fortran` (CLI) to
-demangle that form.
+(`mod_mp_proc_`) conventions, and the plain g77 form (`init_`, `my_sub__`)
+renders as the bare subprogram name.
+
+**Fortran is explicit-request-only** — see
+[Ada and Fortran are opt-in](#ada-and-fortran-are-opt-in) below.
 
 ```rust
-use multi_demangle::{demangle_as, Demangle, DemangleOptions};
+use multi_demangle::{demangle_as, DemangleOptions};
 
-// Auto-detection leaves `init_` alone (it could be a C symbol)...
-assert_eq!(multi_demangle::demangle("init_"), "init_");
-// ...but the explicit entry point demangles it.
+// Auto-detection leaves Fortran symbols alone...
+assert_eq!(multi_demangle::demangle("__my_module_MOD_my_proc"), "__my_module_MOD_my_proc");
+// ...naming the language is what demangles them.
+assert_eq!(
+    demangle_as("fortran", "__my_module_MOD_my_proc", DemangleOptions::complete()),
+    Some("my_module::my_proc".to_string())
+);
 assert_eq!(
     demangle_as("fortran", "init_", DemangleOptions::complete()),
     Some("init".to_string())
@@ -191,6 +196,82 @@ body suffixes, elaboration procedures (`corpus___elabb` →
 `IP` initialization procedure, `E`/`Z` variables), `U`/`W` character
 escapes, anonymous blocks, and operator names (`module__Oadd` →
 `module."+"`).
+
+**Ada is explicit-request-only** — see the next section.
+
+```rust
+use multi_demangle::{demangle_as, DemangleOptions};
+
+assert_eq!(
+    demangle_as("ada", "ada__exceptions__last_chance_handlerXn", DemangleOptions::complete()),
+    Some("ada.exceptions.last_chance_handler".to_string())
+);
+```
+
+### Ada and Fortran are opt-in
+
+Every other supported scheme has a reserved prefix — `_Z`, `_R`, `$s`, `_D`,
+`kfun:`, `?` — that no ordinary C symbol produces, so detecting them by shape
+is safe. Ada and Fortran have none. GNAT emits `pkg__sub` and Intel emits
+`mod_mp_proc`: flat identifiers with a separator, which is also how a great
+many C projects spell an internal function.
+
+The collisions are not hypothetical. In a survey of ~443,000 symbols from 133
+real binaries, shape-based detection claimed 680 C symbols and zero Ada ones:
+
+| C symbol                     | Origin                | Was demangled to           |
+| ---------------------------- | --------------------- | -------------------------- |
+| `_uv__io_close`              | libuv                 | `_uv.io_close`             |
+| `llhttp__debug`              | llhttp (Node.js)      | `llhttp.debug`             |
+| `_thread_db___pthread_keys`  | glibc nptl            | `_thread_db._pthread_keys` |
+| `_ada_copy`                  | ada-url (C, in Node)  | `copy`                     |
+| `ossl_rsa_mp_coeff_names`    | OpenSSL multi-prime   | `ossl_rsa::coeff_names`    |
+
+Mach-O makes the Ada case worse: every symbol there picks up a leading
+underscore, so the C function `ada_copy` is spelled exactly like GNAT's
+library-level subprogram `Copy`. Since C symbols outnumber Ada and Fortran
+ones by orders of magnitude in any real symbol table, guessing by shape
+rewrites far more correct names than it fixes — and it fails *destructively*,
+turning a correct name into a plausible-looking wrong one rather than leaving
+it alone.
+
+So both are reached only by naming the language:
+
+```rust
+use multi_demangle::{demangle_as, DemangleOptions};
+
+// Detection never claims them.
+assert_eq!(multi_demangle::detect_language("ada__exceptions__raiseXn"), None);
+assert!(!multi_demangle::looks_mangled("__my_module_MOD_my_proc"));
+
+// Naming the language is the way in.
+assert_eq!(
+    demangle_as("ada", "_ada_main", DemangleOptions::complete()),
+    Some("main".to_string())
+);
+```
+
+From Python, pass `language=`:
+
+```python
+import multi_demangle
+
+multi_demangle.demangle_symbol("ada__exceptions__raiseXn")                    # unchanged
+multi_demangle.demangle_symbol("ada__exceptions__raiseXn", language="ada")    # "ada.exceptions.raise"
+multi_demangle.demangle_symbols(symbols, language="fortran")                  # whole batch
+```
+
+From the CLI, pass `--language`:
+
+```console
+$ multi-demangle --language ada ada__exceptions__last_chance_handlerXn
+ada.exceptions.last_chance_handler
+```
+
+Use it when you already know the binary's source language; a symbol the named
+language rejects is returned unchanged. `demangle_symbol_structured` has no
+language parameter and so has no Ada or Fortran view — those manglings carry
+nothing but a scope and a name, which `demangle_as` already returns in full.
 
 ObjC support now also recognizes runtime metadata symbols —
 `_OBJC_CLASS_$_Foo`, `_OBJC_METACLASS_$_Foo`, `_OBJC_IVAR_$_Foo.bar`, and
@@ -425,7 +506,7 @@ Options:
 | -------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | `-n, --name-only`                      | names only, no parameters or return types                                                                                                                                                                                            |
 | `--no-parameters` / `--no-return-type` | individual output toggles                                                                                                                                                                                                            |
-| `-l, --language <LANG>`                | force a backend instead of auto-detecting (`cpp`, `rust`, `swift`, `objc`, `objcpp`, `d`, `fortran`, `kotlin-native`, `ada`, `scala-native`); forcing `fortran` also enables the plain g77 `name_` form                              |
+| `-l, --language <LANG>`                | force a backend instead of auto-detecting (`cpp`, `rust`, `swift`, `objc`, `objcpp`, `d`, `fortran`, `kotlin-native`, `ada`, `scala-native`); **required** for `ada` and `fortran`, which are never auto-detected                     |
 | `--normalize`                          | apply the symbol hygiene passes (`__imp_`, `@plt`, ELF versions, Rust hash suffixes and `$`-escapes, `.llvm.` clone suffixes, pseudo-symbols) to symbols that cannot be demangled, then demangle the cleaned symbol when it succeeds |
 | `-s, --structured`                     | print one JSON record per symbol with its status, language, linker decorations, and the structured fields (name, namespace, kind, parameters, return type, generics, hash)                                                           |
 | `--list-languages`                     | print the supported languages and the backends enabled in this build                                                                                                                                                                 |

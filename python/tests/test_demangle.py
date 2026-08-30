@@ -391,3 +391,59 @@ def test_demangle_symbol_ex():
     assert info["status"] == "unmangled"
     assert info["language"] is None
     assert info["decorations"] == [{"kind": "version", "value": "GLIBC_2.2.5"}]
+
+
+def test_ada_and_fortran_are_not_auto_detected():
+    """Both manglings are flat identifier shapes with no reserved prefix, so
+    they describe ordinary C symbols just as well. Auto-detection claiming
+    them rewrote correct C names into plausible-looking wrong ones."""
+    for symbol in (
+        "_thread_db___pthread_keys",
+        "llhttp__debug",
+        "_uv__io_close",
+        "ossl_rsa_mp_coeff_names",
+        "_ada_copy",
+        # Genuine Ada and Fortran symbols are equally not auto-detected; the
+        # shape simply is not evidence either way.
+        "ada__exceptions__last_chance_handlerXn",
+        "__my_module_MOD_my_proc",
+    ):
+        assert multi_demangle.demangle_symbol(symbol) == symbol
+        assert multi_demangle.detect_language(symbol) is None
+        assert multi_demangle.classify_symbol(symbol)["status"] == "unmangled"
+
+
+def test_language_parameter_opts_into_ada_and_fortran():
+    assert (
+        multi_demangle.demangle_symbol(
+            "ada__exceptions__last_chance_handlerXn", language="ada"
+        )
+        == "ada.exceptions.last_chance_handler"
+    )
+    assert multi_demangle.demangle_symbol("_ada_main", language="ada") == "main"
+    assert (
+        multi_demangle.demangle_symbol("__my_module_MOD_my_proc", language="fortran")
+        == "my_module::my_proc"
+    )
+    assert (
+        multi_demangle.demangle_symbol("my_module_mp_my_proc_", language="fortran")
+        == "my_module::my_proc"
+    )
+    # A symbol the named language rejects comes back unchanged.
+    assert multi_demangle.demangle_symbol("libc.so.6", language="ada") == "libc.so.6"
+
+
+def test_language_parameter_on_batches():
+    assert multi_demangle.demangle_symbols(
+        ["__m_MOD_foo", "__m_MOD_bar", "not_a_symbol"], language="fortran"
+    ) == ["m::foo", "m::bar", "not_a_symbol"]
+
+
+def test_language_parameter_forces_a_specific_backend():
+    """An explicit language bypasses detection rather than adding to it."""
+    assert multi_demangle.demangle_symbol("_ZN3foo3barEv", language="cpp") == "foo::bar()"
+    # Rust cannot parse an Itanium symbol, so it is returned unchanged.
+    assert (
+        multi_demangle.demangle_symbol("_ZN3foo3barEv", language="rust")
+        == "_ZN3foo3barEv"
+    )

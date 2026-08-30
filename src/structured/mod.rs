@@ -217,26 +217,10 @@ pub(crate) fn demangle_structured(name: &Name<'_>, opts: DemangleOptions) -> Opt
         return Some(info);
     }
 
-    // Fortran module symbols carry their structure directly in the mangling
-    // (no parameter or return type information).
-    if let Some(parsed) = fortran_parts(sym) {
-        let (module, proc) = parsed;
-        let display = name.demangle(opts).unwrap_or_else(|| sym.to_string());
-        return Some(DemangledInfo {
-            language,
-            simple: display.clone(),
-            display,
-            namespace: vec![module],
-            name: proc,
-            kind: DemangledKind::Function,
-            parameters: None,
-            return_type: None,
-            hash: None,
-            template_args: None,
-            is_generic: false,
-            mangled: sym.to_string(),
-        });
-    }
+    // Fortran and Ada are not handled here: both are explicit-request-only
+    // (see `crate::demangle_as`), and a structured view has no language
+    // parameter to request them through. Their manglings carry nothing but a
+    // scope and a name, which `demangle_as` already returns in full.
 
     // The D backend parses the full grammar; its structure is authoritative
     // over any text-derived extraction.
@@ -340,9 +324,7 @@ fn detected_language(sym: &str) -> Option<Language> {
         Some("d") => Some(Language::D),
         // Languages without a `Language` variant map to `Unknown`; the
         // short name is carried by the string APIs.
-        Some("fortran") | Some("kotlin-native") | Some("ada") | Some("scala-native") => {
-            Some(Language::Unknown)
-        }
+        Some("kotlin-native") | Some("scala-native") => Some(Language::Unknown),
         _ => None,
     }
 }
@@ -426,16 +408,6 @@ fn objc_metadata_info(sym: &str, language: Language) -> Option<DemangledInfo> {
         is_generic: false,
         mangled: sym.to_string(),
     })
-}
-
-/// The `(module, procedure)` of a Fortran module symbol, when the symbol is
-/// one. Feature-independent: the structure is pattern-derived.
-#[allow(unused_variables)]
-fn fortran_parts(sym: &str) -> Option<(String, String)> {
-    #[cfg(feature = "fortran")]
-    return crate::fortran::parse_module_symbol(sym).map(|s| (s.module, s.name));
-    #[cfg(not(feature = "fortran"))]
-    None
 }
 
 /// Builds the structured view of a D symbol from the demangler's parse, or
@@ -1035,13 +1007,12 @@ mod test {
     }
 
     #[test]
-    fn fortran_module_symbol() {
-        let info = info("__my_module_MOD_my_proc");
-        assert_eq!(info.namespace, ["my_module"]);
-        assert_eq!(info.name, "my_proc");
-        assert_eq!(info.kind, DemangledKind::Function);
-        assert_eq!(info.parameters, None);
-        assert_eq!(info.display, "my_module::my_proc");
+    fn fortran_module_symbol_is_not_auto_detected() {
+        // Fortran is explicit-request-only, and a structured view has no
+        // language parameter to request it through.
+        assert!(Name::from("__my_module_MOD_my_proc")
+            .demangle_structured(DemangleOptions::complete())
+            .is_none());
     }
 
     #[test]

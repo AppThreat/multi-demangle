@@ -52,12 +52,18 @@ class DemangledInfo:
     def mangled(self) -> str: ...
     def to_dict(self) -> dict[str, Any]: ...
 
-def demangle_symbol(mangled: str, options: DemangleOptions | None = ...) -> str: ...
+def demangle_symbol(
+    mangled: str,
+    options: DemangleOptions | None = ...,
+    *,
+    language: str | None = ...,
+) -> str: ...
 def demangle_symbols(
     symbols: Iterable[str],
     options: DemangleOptions | None = ...,
     *,
     unique: bool = ...,
+    language: str | None = ...,
 ) -> list[str]: ...
 def demangle_symbol_ex(
     mangled: str, options: DemangleOptions | None = ...

@@ -55,7 +55,9 @@ struct Cli {
     #[arg(long, conflicts_with = "name_only")]
     no_return_type: bool,
 
-    /// Force this language backend instead of auto-detecting.
+    /// Force this language backend instead of auto-detecting. Required for
+    /// `ada` and `fortran`, which are never auto-detected: their manglings
+    /// are flat identifier shapes that fit ordinary C symbols just as well.
     #[arg(short = 'l', long, value_enum)]
     language: Option<LanguageArg>,
 

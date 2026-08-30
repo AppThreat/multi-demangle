@@ -20,17 +20,27 @@
 //! Pernosco (<https://github.com/Pernosco/ada-demangle>), with operator
 //! rendering (quoted, as `pkg."="`) matching the GNU reference demangler.
 //!
+//! # Auto-detection
+//!
+//! Ada is **explicit-request-only**. GNAT's `pkg__sub` encoding has no
+//! reserved prefix — it is a flat identifier with a separator, which is also
+//! how a great many C projects spell an internal function (`_uv__io_close`,
+//! `_thread_db___pthread_keys`), and on Mach-O every symbol picks up a
+//! leading underscore, so the C function `ada_copy` is spelled exactly like
+//! GNAT's library-level subprogram `Copy`. Since C symbols outnumber Ada ones
+//! by orders of magnitude in any real symbol table, guessing by shape
+//! rewrites far more correct names than it fixes. Ada is therefore reached
+//! only by naming the language.
+//!
 //! # Examples
 //!
 //! ```
 //! # #[cfg(feature = "ada")] {
-//! use multi_demangle::{Demangle, DemangleOptions};
-//! use symbolic_common::Name;
+//! use multi_demangle::{demangle_as, DemangleOptions};
 //!
-//! let name = Name::from("ada__exceptions__last_chance_handlerXn");
 //! assert_eq!(
-//!     name.try_demangle(DemangleOptions::complete()),
-//!     "ada.exceptions.last_chance_handler"
+//!     demangle_as("ada", "ada__exceptions__last_chance_handlerXn", DemangleOptions::complete()),
+//!     Some("ada.exceptions.last_chance_handler".to_string())
 //! );
 //! # }
 //! ```

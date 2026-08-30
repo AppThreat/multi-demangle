@@ -518,14 +518,12 @@ fn dlang_magic_kinds() {
 // --- Fortran ---
 
 #[test]
-fn fortran_module_fields() {
-    let info = structured("__my_module_MOD_my_proc");
-    assert_eq!(info.namespace, ["my_module"]);
-    assert_eq!(info.name, "my_proc");
-    assert_eq!(info.kind, DemangledKind::Function);
-    // The mangling carries no type information.
-    assert_eq!(info.parameters, None);
-    assert_eq!(info.return_type, None);
+fn fortran_has_no_structured_view() {
+    // As with Ada: explicit-request-only, and a structured view has no
+    // language parameter to request it through.
+    assert!(Name::from("__my_module_MOD_my_proc")
+        .demangle_structured(DemangleOptions::complete())
+        .is_none());
 }
 
 // --- Kotlin/Native ---
@@ -545,11 +543,12 @@ fn kotlin_native_fields() {
 // --- Ada ---
 
 #[test]
-fn ada_fields() {
-    let info = structured("ada__exceptions__last_chance_handlerXn");
-    assert_eq!(info.namespace, ["ada", "exceptions"]);
-    assert_eq!(info.name, "last_chance_handler");
-    assert_eq!(info.kind, DemangledKind::Function);
+fn ada_has_no_structured_view() {
+    // Ada is explicit-request-only and a structured view has no language
+    // parameter to request it through; `demangle_as` returns the full name.
+    assert!(Name::from("ada__exceptions__last_chance_handlerXn")
+        .demangle_structured(DemangleOptions::complete())
+        .is_none());
 }
 
 // --- ObjC metadata ---

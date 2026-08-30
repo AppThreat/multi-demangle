@@ -33,7 +33,7 @@ use std::collections::BTreeMap;
 use std::fs;
 use std::path::Path;
 
-use multi_demangle::{Demangle, DemangleOptions};
+use multi_demangle::{demangle_as, Demangle, DemangleOptions};
 use symbolic_common::Name;
 
 /// Placeholder for a symbol the auto-detect pipeline must not claim.
@@ -60,10 +60,18 @@ fn load_expectations(path: &Path) -> BTreeMap<String, String> {
     map
 }
 
-/// Renders a symbol through the real auto-detect pipeline; `None` when no
-/// backend claims it.
-fn render(sym: &str) -> Option<String> {
-    Name::from(sym).demangle(DemangleOptions::complete())
+/// Renders a corpus symbol the way a consumer of that corpus would.
+///
+/// Ada and Fortran are explicit-request-only — their manglings are flat
+/// identifier shapes that fit ordinary C symbols just as well, so
+/// auto-detection never claims them — and so are exercised through
+/// `demangle_as`. The rest go through the real auto-detect pipeline. `None`
+/// when no backend claims the symbol.
+fn render(lang: &str, sym: &str) -> Option<String> {
+    match lang {
+        "ada" | "fortran" => demangle_as(lang, sym, DemangleOptions::complete()),
+        _ => Name::from(sym).demangle(DemangleOptions::complete()),
+    }
 }
 
 /// The four new-language corpora, in test order.
@@ -95,7 +103,7 @@ fn test_new_language_corpus_tiers() {
 
         // Golden tier: hard assertions. A change here is a bug.
         for (sym, expected) in &golden {
-            let actual = render(sym);
+            let actual = render(lang, sym);
             let matches = match expected.as_str() {
                 REJECTED => actual.is_none(),
                 expected => actual.as_deref() == Some(expected),
@@ -116,7 +124,7 @@ fn test_new_language_corpus_tiers() {
             if golden.contains_key(sym) {
                 continue;
             }
-            let rendered = render(sym).unwrap_or_else(|| REJECTED.to_string());
+            let rendered = render(lang, sym).unwrap_or_else(|| REJECTED.to_string());
             current.insert(sym.clone(), rendered);
         }
         if updating {
@@ -175,7 +183,10 @@ fn test_new_language_corpus_tiers() {
 
         // Sanity floor: most of a real corpus must demangle. A change that
         // silently rejects half a corpus is investigated, not snapshotted.
-        let demangled = symbols.iter().filter(|sym| render(sym).is_some()).count();
+        let demangled = symbols
+            .iter()
+            .filter(|sym| render(lang, sym).is_some())
+            .count();
         assert!(
             demangled * 2 > symbols.len(),
             "{lang}: only {demangled}/{} corpus symbols demangle",
