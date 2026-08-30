@@ -44,7 +44,7 @@ use crate::{Demangle, DemangleOptions, SymbolStatus};
 
 /// The demangler's structured view of a mangled symbol.
 ///
-/// Fields mirror the plan API; the struct is [`non_exhaustive`] so new fields
+/// Fields mirror the plan API; the struct is `non_exhaustive` so new fields
 /// are not breaking changes.
 #[non_exhaustive]
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -90,7 +90,7 @@ pub struct DemangledInfo {
 /// The classification is a best-effort hint modeled on the consumer's tables
 /// (closures, compiler glue, intrinsics, and the CamelCase-owner method
 /// heuristic), so compiler-generated artefacts can be kept apart from
-/// ordinary source functions. The enum is [`non_exhaustive`].
+/// ordinary source functions. The enum is `non_exhaustive`.
 #[non_exhaustive]
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum DemangledKind {
@@ -118,6 +118,12 @@ pub enum DemangledKind {
         /// Whether this is a class (`+`) method.
         class_method: bool,
     },
+    /// An Objective-C class object (`_OBJC_CLASS_$_Foo`).
+    ObjCClass,
+    /// An Objective-C metaclass object (`_OBJC_METACLASS_$_Foo`).
+    ObjCMetaclass,
+    /// An Objective-C instance variable offset (`_OBJC_IVAR_$_Foo.bar`).
+    ObjCIvar,
     /// Anything that does not fit the known kinds.
     Other(String),
 }
@@ -137,6 +143,9 @@ impl DemangledKind {
             DemangledKind::TypeInfo => "type_info",
             DemangledKind::StaticVariable => "static_variable",
             DemangledKind::ObjCMethod { .. } => "objc_method",
+            DemangledKind::ObjCClass => "objc_class",
+            DemangledKind::ObjCMetaclass => "objc_metaclass",
+            DemangledKind::ObjCIvar => "objc_ivar",
             DemangledKind::Other(_) => "other",
         }
     }
@@ -200,6 +209,39 @@ pub(crate) fn demangle_structured(name: &Name<'_>, opts: DemangleOptions) -> Opt
 
     if crate::is_maybe_objc(sym) {
         return Some(objc_info(sym, language, opts));
+    }
+
+    // Objective-C runtime metadata symbols pass through demangling
+    // unchanged; their value is the typed kind and the class they name.
+    if let Some(info) = objc_metadata_info(sym, language) {
+        return Some(info);
+    }
+
+    // Fortran module symbols carry their structure directly in the mangling
+    // (no parameter or return type information).
+    if let Some(parsed) = fortran_parts(sym) {
+        let (module, proc) = parsed;
+        let display = name.demangle(opts).unwrap_or_else(|| sym.to_string());
+        return Some(DemangledInfo {
+            language,
+            simple: display.clone(),
+            display,
+            namespace: vec![module],
+            name: proc,
+            kind: DemangledKind::Function,
+            parameters: None,
+            return_type: None,
+            hash: None,
+            template_args: None,
+            is_generic: false,
+            mangled: sym.to_string(),
+        });
+    }
+
+    // The D backend parses the full grammar; its structure is authoritative
+    // over any text-derived extraction.
+    if let Some(info) = dlang_info(sym, language, opts) {
+        return Some(info);
     }
 
     let display = name.demangle(opts)?;
@@ -295,7 +337,12 @@ fn detected_language(sym: &str) -> Option<Language> {
         Some("swift") => Some(Language::Swift),
         Some("objc") => Some(Language::ObjC),
         Some("objcpp") => Some(Language::ObjCpp),
-        Some("scala-native") => Some(Language::Unknown),
+        Some("d") => Some(Language::D),
+        // Languages without a `Language` variant map to `Unknown`; the
+        // short name is carried by the string APIs.
+        Some("fortran") | Some("kotlin-native") | Some("ada") | Some("scala-native") => {
+            Some(Language::Unknown)
+        }
         _ => None,
     }
 }
@@ -325,6 +372,124 @@ fn objc_info(sym: &str, language: Language, opts: DemangleOptions) -> DemangledI
         is_generic: false,
         mangled: sym.to_string(),
     }
+}
+
+/// Builds the structured view of an Objective-C runtime metadata symbol,
+/// or `None` when the symbol is not one.
+fn objc_metadata_info(sym: &str, language: Language) -> Option<DemangledInfo> {
+    let (kind, class, leaf) = if let Some(rest) = sym
+        .strip_prefix("_OBJC_METACLASS_$_")
+        .or_else(|| sym.strip_prefix("_OBJC_METCLASS_$_"))
+    {
+        (DemangledKind::ObjCMetaclass, None, rest)
+    } else if let Some(rest) = sym.strip_prefix("_OBJC_CLASS_$_") {
+        (DemangledKind::ObjCClass, None, rest)
+    } else if let Some(rest) = sym.strip_prefix("_OBJC_IVAR_$_") {
+        match rest.split_once('.') {
+            Some((class, ivar)) => (DemangledKind::ObjCIvar, Some(class.to_string()), ivar),
+            None => (DemangledKind::ObjCIvar, None, rest),
+        }
+    } else if sym.starts_with("l_OBJC_SELECTOR") || sym.starts_with("OBJC_SELECTOR_REFERENCES") {
+        // Emitted selector references are compiler glue with no readable
+        // name of their own.
+        return Some(DemangledInfo {
+            language,
+            simple: sym.to_string(),
+            display: sym.to_string(),
+            namespace: Vec::new(),
+            name: sym.to_string(),
+            kind: DemangledKind::Glue,
+            parameters: None,
+            return_type: None,
+            hash: None,
+            template_args: None,
+            is_generic: false,
+            mangled: sym.to_string(),
+        });
+    } else {
+        return None;
+    };
+
+    let display = sym.to_string();
+    let namespace = class.into_iter().collect();
+    Some(DemangledInfo {
+        language,
+        simple: display.clone(),
+        display,
+        namespace,
+        name: leaf.to_string(),
+        kind,
+        parameters: None,
+        return_type: None,
+        hash: None,
+        template_args: None,
+        is_generic: false,
+        mangled: sym.to_string(),
+    })
+}
+
+/// The `(module, procedure)` of a Fortran module symbol, when the symbol is
+/// one. Feature-independent: the structure is pattern-derived.
+#[allow(unused_variables)]
+fn fortran_parts(sym: &str) -> Option<(String, String)> {
+    #[cfg(feature = "fortran")]
+    return crate::fortran::parse_module_symbol(sym).map(|s| (s.module, s.name));
+    #[cfg(not(feature = "fortran"))]
+    None
+}
+
+/// Builds the structured view of a D symbol from the demangler's parse, or
+/// `None` when the symbol is not D or the backend is compiled out.
+#[allow(unused_variables)]
+fn dlang_info(sym: &str, language: Language, opts: DemangleOptions) -> Option<DemangledInfo> {
+    #[cfg(feature = "dlang")]
+    {
+        let parts = crate::dlang::structured_parts(sym)?;
+        let kind = match parts.kind? {
+            crate::dlang::DlangKind::Function | crate::dlang::DlangKind::Initializer => {
+                DemangledKind::Function
+            }
+            crate::dlang::DlangKind::Method => DemangledKind::Method,
+            crate::dlang::DlangKind::Variable => DemangledKind::StaticVariable,
+            crate::dlang::DlangKind::VirtualTable => DemangledKind::VirtualTable,
+            crate::dlang::DlangKind::TypeInfo => DemangledKind::TypeInfo,
+            crate::dlang::DlangKind::ModuleInfo => DemangledKind::StaticVariable,
+        };
+        let display = Name::new(sym, NameMangling::Mangled, language).demangle(opts)?;
+        let simple = Name::new(sym, NameMangling::Mangled, language)
+            .demangle(DemangleOptions::name_only())
+            .unwrap_or_else(|| display.clone());
+        // The leaf may carry its template arguments (`temp!(int)`); the
+        // parse's own argument renderings take precedence. A template in a
+        // namespace component (`temp!(int).func`) marks the symbol generic
+        // without contributing leaf arguments.
+        let (name, template_args, leaf_generic) = match parts.name.find("!(") {
+            Some(idx) if parts.name.ends_with(')') => {
+                let args = parts.template_args.clone().unwrap_or_else(|| {
+                    crate::dlang::split_template_args(&parts.name[idx + 2..parts.name.len() - 1])
+                });
+                (parts.name[..idx].to_string(), Some(args), true)
+            }
+            _ => (parts.name, parts.template_args.clone(), false),
+        };
+        let is_generic = leaf_generic || parts.namespace.iter().any(|c| c.contains("!("));
+        Some(DemangledInfo {
+            language,
+            simple,
+            display,
+            namespace: parts.namespace,
+            name,
+            kind,
+            parameters: parts.parameters,
+            return_type: None,
+            hash: None,
+            template_args,
+            is_generic,
+            mangled: sym.to_string(),
+        })
+    }
+    #[cfg(not(feature = "dlang"))]
+    None
 }
 
 /// Splits a C++ rendering into its name path, parameters, and return type
@@ -867,6 +1032,57 @@ mod test {
                 class_method: false
             }
         );
+    }
+
+    #[test]
+    fn fortran_module_symbol() {
+        let info = info("__my_module_MOD_my_proc");
+        assert_eq!(info.namespace, ["my_module"]);
+        assert_eq!(info.name, "my_proc");
+        assert_eq!(info.kind, DemangledKind::Function);
+        assert_eq!(info.parameters, None);
+        assert_eq!(info.display, "my_module::my_proc");
+    }
+
+    #[test]
+    fn dlang_function_symbol() {
+        let info = info("_D6module4Test6methodMFiZi");
+        assert_eq!(info.language, Language::D);
+        assert_eq!(info.namespace, ["module", "Test"]);
+        assert_eq!(info.name, "method");
+        assert_eq!(info.kind, DemangledKind::Method);
+        assert_eq!(
+            info.parameters.as_deref(),
+            Some(["int".to_string()].as_slice())
+        );
+    }
+
+    #[test]
+    fn dlang_template_symbol() {
+        let info = info("_D6module13__T4tempTiTkZ4funcFZv");
+        assert_eq!(info.namespace, ["module", "temp!(int, uint)"]);
+        assert_eq!(info.name, "func");
+        assert!(info.is_generic);
+        assert_eq!(info.kind, DemangledKind::Function);
+    }
+
+    #[test]
+    fn objc_metadata_symbols() {
+        let class = info("_OBJC_CLASS_$_Foo");
+        assert_eq!(class.language, Language::ObjC);
+        assert_eq!(class.name, "Foo");
+        assert_eq!(class.kind, DemangledKind::ObjCClass);
+
+        let metaclass = info("_OBJC_METACLASS_$_Foo");
+        assert_eq!(metaclass.kind, DemangledKind::ObjCMetaclass);
+
+        let ivar = info("_OBJC_IVAR_$_MyObject._count");
+        assert_eq!(ivar.namespace, ["MyObject"]);
+        assert_eq!(ivar.name, "_count");
+        assert_eq!(ivar.kind, DemangledKind::ObjCIvar);
+
+        let selector = info("l_OBJC_SELECTOR_REFERENCES_12");
+        assert_eq!(selector.kind, DemangledKind::Glue);
     }
 
     #[test]

@@ -75,6 +75,36 @@ fn test_scala_native_fallback_detection() {
     assert_language("_SM17java.lang.IntegerD7compareiiiEo", Language::Unknown);
 }
 
+#[test]
+fn test_dlang() {
+    assert_language("_Dmain", Language::D);
+    assert_language("_D6module4funcFZv", Language::D);
+    // Near misses stay unknown.
+    assert_language("_DDD", Language::Unknown);
+    assert_language("_D88", Language::Unknown);
+}
+
+#[test]
+fn test_objc_metadata_symbols() {
+    assert_language("_OBJC_CLASS_$_Foo", Language::ObjC);
+    assert_language("_OBJC_METACLASS_$_Foo", Language::ObjC);
+    assert_language("_OBJC_IVAR_$_MyObject._count", Language::ObjC);
+    assert_language("l_OBJC_SELECTOR_REFERENCES_12", Language::ObjC);
+}
+
+#[test]
+fn test_string_named_languages_stay_unknown() {
+    // Fortran module symbols, Kotlin/Native, and Ada have no `Language`
+    // variant; the string-level `detect_language` names them instead.
+    assert_language("__my_module_MOD_my_proc", Language::Unknown);
+    assert_language("my_module_mp_my_proc_", Language::Unknown);
+    assert_language(
+        "_kfun:com.example.Foo.bar(kotlin.String)",
+        Language::Unknown,
+    );
+    assert_language("ada__exceptions__raiseXn", Language::Unknown);
+}
+
 #[cfg(feature = "swift")]
 mod swift_tests {
     use super::*;

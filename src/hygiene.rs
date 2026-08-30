@@ -35,7 +35,9 @@ use std::borrow::Cow;
 
 use symbolic_common::{Language, Name};
 
-use crate::{Demangle, DemangleOptions};
+use crate::Demangle;
+#[cfg(feature = "scala-native")]
+use crate::DemangleOptions;
 
 /// A linker or toolchain decoration detected on a raw symbol.
 #[non_exhaustive]
@@ -353,11 +355,16 @@ pub fn normalize_symbol(symbol: &str) -> Cow<'_, str> {
 /// ```
 pub fn looks_mangled(symbol: &str) -> bool {
     crate::is_maybe_objc(symbol)
+        || crate::is_maybe_objc_metadata(symbol)
         || crate::is_maybe_cpp(symbol)
         || crate::is_maybe_msvc(symbol)
         || is_rust_prefix(symbol)
         || is_swift_prefix(symbol)
         || is_scala_native_prefix(symbol)
+        || crate::is_maybe_dlang(symbol)
+        || crate::is_maybe_kotlin_native(symbol)
+        || crate::is_maybe_ada(symbol)
+        || crate::is_maybe_fortran(symbol)
         // Legacy Rust symbols that only partially survived a previous
         // demangling pass keep their `$LT$`-style escapes; upstream
         // consumers gate on this too.
@@ -384,11 +391,26 @@ pub fn looks_mangled(symbol: &str) -> bool {
 /// assert_eq!(detect_language("libc.so.6"), None);
 /// ```
 pub fn detect_language(symbol: &str) -> Option<&'static str> {
-    match detected_language(symbol) {
-        Some(language) => language_name(language),
-        None if is_scala_native_symbol(symbol) => Some("scala-native"),
-        None => None,
+    if let Some(language) = detected_language(symbol) {
+        return language_name(language);
     }
+    // Languages without a `symbolic_common::Language` variant are recognized
+    // by their (unambiguous) predicates, independent of which backends are
+    // compiled in. Ada's check runs a full parse: its `__`-separator
+    // heuristic is the loosest of the set.
+    if crate::is_maybe_kotlin_native(symbol) {
+        return Some("kotlin-native");
+    }
+    if crate::is_maybe_fortran(symbol) {
+        return Some("fortran");
+    }
+    if is_ada_symbol(symbol) {
+        return Some("ada");
+    }
+    if is_scala_native_symbol(symbol) {
+        return Some("scala-native");
+    }
+    None
 }
 
 /// Renders a [`Language`] as the short lowercase name used across the crate's
@@ -407,6 +429,21 @@ pub fn language_name(language: Language) -> Option<&'static str> {
 /// only by demangling, mirroring the fallback in [`Demangle::demangle`].
 pub fn is_scala_native_symbol(symbol: &str) -> bool {
     is_scala_native_symbol_impl(symbol)
+}
+
+/// Whether `symbol` parses as an Ada (GNAT) symbol: the charset/prefix
+/// predicate, validated by a full parse when the `ada` backend is compiled
+/// in.
+fn is_ada_symbol(symbol: &str) -> bool {
+    // The parse alone accepts any plain identifier; the separator/operator
+    // predicate is what makes a symbol *maybe Ada*.
+    if !crate::is_maybe_ada(symbol) {
+        return false;
+    }
+    #[cfg(feature = "ada")]
+    return crate::ada::parse(symbol).is_some();
+    #[cfg(not(feature = "ada"))]
+    return true;
 }
 
 /// Classifies a raw symbol without demangling it.
@@ -471,16 +508,39 @@ pub fn classify_symbol(symbol: &str) -> SymbolStatus {
         );
     }
 
+    // Languages without a `Language` variant are reported as mangled in an
+    // unnamed language when their backend is compiled in, and as unsupported
+    // otherwise (mirroring the Swift prefix fallback above).
+    if crate::is_maybe_kotlin_native(symbol) {
+        return unknown_language_status(cfg!(feature = "kotlin-native"));
+    }
+    if crate::is_maybe_fortran(symbol) {
+        return unknown_language_status(cfg!(feature = "fortran"));
+    }
+    if is_ada_symbol(symbol) {
+        return unknown_language_status(cfg!(feature = "ada"));
+    }
     // Scala Native has no `Language` variant; prefix-matching symbols its
     // demangler accepts are reported as mangled in an unnamed language.
     if is_scala_native_symbol(symbol) {
-        return SymbolStatus::Mangled(Language::Unknown);
+        return unknown_language_status(cfg!(feature = "scala-native"));
     }
 
     match detected_language(symbol) {
         Some(language) if is_language_supported(language) => SymbolStatus::Mangled(language),
         Some(language) => SymbolStatus::Unsupported(language),
         None => SymbolStatus::Unmangled,
+    }
+}
+
+/// The [`SymbolStatus`] for a language the [`Language`] enum cannot name:
+/// [`SymbolStatus::Mangled`] under [`Language::Unknown`] when the backend is
+/// available, [`SymbolStatus::Unsupported`] when it is compiled out.
+fn unknown_language_status(supported: bool) -> SymbolStatus {
+    if supported {
+        SymbolStatus::Mangled(Language::Unknown)
+    } else {
+        SymbolStatus::Unsupported(Language::Unknown)
     }
 }
 
@@ -509,6 +569,7 @@ fn detected_language(symbol: &str) -> Option<Language> {
 fn is_language_supported(language: Language) -> bool {
     match language {
         Language::Rust => cfg!(feature = "rust"),
+        Language::D => cfg!(feature = "dlang"),
         Language::Swift => cfg!(feature = "swift"),
         // C++ dispatches to one of four backends; the language is demanglable
         // when any of them is compiled in. ObjC selectors pass through

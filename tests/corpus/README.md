@@ -28,6 +28,16 @@ Collected 2026-08-29 on macOS 26.6 (arm64); `nm` from the Xcode toolchain.
 | File | Source | Notes |
 | ---- | ------ | ----- |
 | `rust_symbols.txt` | `nm` over `~/.cargo/bin/rust-analyzer` and `~/.cargo/bin/wasm-pack` (rustup-distributed release binaries) | legacy (`_ZN…E`, macOS `__ZN…`) and v0 (`_RN…`) Rust mangling |
+
+### New-language corpora (pending)
+
+The D, Fortran, Kotlin/Native, and Ada backends (Plan 07) are covered by
+table-driven tests derived from the upstream oracles (LLVM's D demangler test
+suite, the D ABI specification, CMake's `FortranCInterface` survey, and the
+MIT-licensed `ada-demangle` test suite) plus a deterministic mutation suite
+(`tests/test_robustness.rs`). Real-symbol corpus dumps for these languages
+await toolchain collection — extend `scripts/collect-corpus.sh` with a
+gfortran/LDC/kotlin-native/GNAT fixture when those toolchains are available.
 | `swift_symbols.txt` | `nm` over the `libswiftCore.dylib` bundled inside `/Applications/The Unarchiver.app` (Apple Swift runtime, current version 1001.0.82) | current (`_$s…`/`_$S…`) and pre-Swift-5 (`_T0`/`_Tt`) mangling; system Swift dylibs live in the dyld shared cache and carry no symbol table, hence an app-bundled copy |
 | `cpp_symbols.txt` | `nm` over the Xcode `clang++` binary (Apple clang 21.0.0) | Itanium ABI (`_ZN…`/`__ZN…`) |
 

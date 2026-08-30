@@ -251,13 +251,73 @@ fn structured_output_is_never_colorized() {
 fn list_languages_prints_languages() {
     let out = run(&["--list-languages"], None);
     assert_eq!(out.status, 0);
-    for language in ["cpp", "rust", "swift", "objc", "objcpp", "scala-native"] {
+    for language in [
+        "cpp",
+        "rust",
+        "swift",
+        "objc",
+        "objcpp",
+        "scala-native",
+        "d",
+        "fortran",
+        "kotlin-native",
+        "ada",
+    ] {
         assert!(
             out.stdout.contains(language),
             "missing {language}: {}",
             out.stdout
         );
     }
+}
+
+#[test]
+fn new_language_backends_demangle() {
+    for (symbol, expected) in [
+        ("_D6module4funcFZv", "module.func()"),
+        ("__my_module_MOD_my_proc", "my_module::my_proc"),
+        (
+            "_kfun:com.example.Foo.bar(kotlin.String;kotlin.Int)",
+            "com.example.Foo.bar(String, Int)",
+        ),
+        (
+            "ada__exceptions__last_chance_handlerXn",
+            "ada.exceptions.last_chance_handler",
+        ),
+        // ObjC runtime metadata passes through unchanged.
+        ("_OBJC_CLASS_$_Foo", "_OBJC_CLASS_$_Foo"),
+    ] {
+        let out = run(&[symbol], None);
+        assert_eq!(out.status, 0, "for {symbol}");
+        assert_eq!(out.stdout, format!("{expected}\n"), "for {symbol}");
+    }
+}
+
+#[test]
+fn forced_fortran_demangles_the_plain_g77_form() {
+    // Auto-detection passes `init_` through...
+    let out = run(&["init_"], None);
+    assert_eq!(out.stdout, "init_\n");
+    // ...but the forced backend demangles it.
+    let out = run(&["-l", "fortran", "init_"], None);
+    assert_eq!(out.stdout, "init\n");
+    let out = run(&["--language", "fortran", "my_sub__"], None);
+    assert_eq!(out.stdout, "my_sub\n");
+}
+
+#[test]
+fn structured_output_for_new_backends() {
+    let out = run(&["-s", "_D6module4Test6methodMFiZi"], None);
+    assert_eq!(out.status, 0);
+    assert!(out.stdout.contains("\"language\":\"d\""), "{}", out.stdout);
+    assert!(out.stdout.contains("\"kind\":\"method\""), "{}", out.stdout);
+
+    let out = run(&["-s", "_OBJC_CLASS_$_Foo"], None);
+    assert!(
+        out.stdout.contains("\"kind\":\"objc_class\""),
+        "{}",
+        out.stdout
+    );
 }
 
 #[test]

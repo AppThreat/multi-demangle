@@ -32,7 +32,7 @@ const LANGUAGE_COLUMN_WIDTH: usize = 14;
 #[derive(Parser, Debug)]
 #[command(
     name = "multi-demangle",
-    about = "Demangle C++, Rust, Swift, ObjC, and Scala Native symbols"
+    about = "Demangle C++, Rust, Swift, ObjC, D, Fortran, Kotlin/Native, Ada, and Scala Native symbols"
 )]
 struct Cli {
     /// Mangled symbols to demangle, one result per line. When omitted,
@@ -92,18 +92,27 @@ enum LanguageArg {
     Rust,
     /// Swift.
     Swift,
-    /// Objective-C selectors (returned unchanged).
+    /// Objective-C selectors and runtime metadata symbols.
     Objc,
-    /// Objective-C++ (ObjC selectors plus the C++ backends).
+    /// Objective-C++ (ObjC symbols plus the C++ backends).
     Objcpp,
+    /// D (`_D`-prefixed mangling).
+    D,
+    /// Fortran (gfortran and Intel module symbols; explicit requests also
+    /// accept the plain g77 `name_` form).
+    Fortran,
+    /// Kotlin/Native (`kfun:`-prefixed symbols).
+    KotlinNative,
+    /// Ada (GNAT `pkg__sub` encoding).
+    Ada,
     /// Scala Native (`_SM`-prefixed symbols).
     ScalaNative,
 }
 
 impl LanguageArg {
-    /// The [`Language`] to pin a `Name` to. Scala Native has no `Language`
-    /// variant; `Language::Unknown` plus an explicit mangled marker routes
-    /// straight to the Scala Native fallback.
+    /// The [`Language`] to pin a `Name` to. Languages without a `Language`
+    /// variant use `Language::Unknown` plus an explicit mangled marker,
+    /// which routes into the unknown-language fallbacks.
     fn language(self) -> Language {
         match self {
             LanguageArg::Cpp => Language::Cpp,
@@ -111,7 +120,37 @@ impl LanguageArg {
             LanguageArg::Swift => Language::Swift,
             LanguageArg::Objc => Language::ObjC,
             LanguageArg::Objcpp => Language::ObjCpp,
-            LanguageArg::ScalaNative => Language::Unknown,
+            LanguageArg::D => Language::D,
+            LanguageArg::Fortran
+            | LanguageArg::KotlinNative
+            | LanguageArg::Ada
+            | LanguageArg::ScalaNative => Language::Unknown,
+        }
+    }
+
+    /// The backend name for [`demangle_as`]-style explicit routing, used by
+    /// the languages that have no [`Language`] variant. `None` routes
+    /// through the `Name`-based pipeline instead.
+    fn backend(self) -> Option<&'static str> {
+        match self {
+            LanguageArg::Cpp
+            | LanguageArg::Rust
+            | LanguageArg::Swift
+            | LanguageArg::Objc
+            | LanguageArg::Objcpp
+            | LanguageArg::D
+            | LanguageArg::ScalaNative => None,
+            LanguageArg::Fortran => Some("fortran"),
+            LanguageArg::KotlinNative => Some("kotlin-native"),
+            LanguageArg::Ada => Some("ada"),
+        }
+    }
+
+    /// Demangles one symbol with this backend forced.
+    fn demangle(&self, sym: &str, opts: DemangleOptions) -> Option<String> {
+        match self.backend() {
+            Some(backend) => multi_demangle::demangle_as(backend, sym, opts),
+            None => Name::new(sym, NameMangling::Mangled, self.language()).demangle(opts),
         }
     }
 }
@@ -129,7 +168,7 @@ enum ColorWhen {
 /// The demangling settings shared by both input modes.
 struct Pipeline {
     opts: DemangleOptions,
-    language: Option<Language>,
+    language: Option<LanguageArg>,
     normalizer: Option<Normalizer>,
 }
 
@@ -165,22 +204,30 @@ impl Pipeline {
     }
 
     /// Demangles with auto-detection, or with the `--language` backend
-    /// forced. The `Demangle::try_demangle` methods borrow the `Name`, so
-    /// the owned `demangle` is used here.
+    /// forced.
     fn demangle_owned(&self, sym: &str) -> Option<String> {
         match self.language {
-            Some(language) => Name::new(sym, NameMangling::Mangled, language).demangle(self.opts),
+            Some(language) => language.demangle(sym, self.opts),
             None => Name::from(sym).demangle(self.opts),
         }
     }
 
-    /// The structured view of a symbol, honoring a forced `--language`.
+    /// The structured view of a symbol, honoring a forced `--language`
+    /// where the forced backend also auto-detects.
     fn structured(&self, sym: &str) -> Option<DemangledInfo> {
-        let name = match self.language {
-            Some(language) => Name::new(sym, NameMangling::Mangled, language),
-            None => Name::from(sym),
-        };
-        name.demangle_structured(self.opts)
+        match self.language {
+            Some(language) if language.backend().is_some() => {
+                // Explicit-routing languages (Fortran's bare g77 form among
+                // them) can demangle symbols that auto-detection never
+                // claims, so no structure is available for those.
+                if multi_demangle::demangle_as(language.backend()?, sym, self.opts).is_some() {
+                    Name::from(sym).demangle_structured(self.opts)
+                } else {
+                    None
+                }
+            }
+            _ => Name::from(sym).demangle_structured(self.opts),
+        }
     }
 }
 
@@ -499,7 +546,19 @@ fn enabled_backends() -> Vec<&'static str> {
     if cfg!(feature = "scala-native") {
         backends.push("scala-native");
     }
-    // ObjC selectors are handled without a backend.
+    if cfg!(feature = "dlang") {
+        backends.push("d");
+    }
+    if cfg!(feature = "fortran") {
+        backends.push("fortran");
+    }
+    if cfg!(feature = "kotlin-native") {
+        backends.push("kotlin-native");
+    }
+    if cfg!(feature = "ada") {
+        backends.push("ada");
+    }
+    // ObjC selectors and metadata symbols are handled without a backend.
     backends.push("objc");
     backends
 }
@@ -583,6 +642,30 @@ fn list_languages() {
         feature_note(cfg!(feature = "scala-native"), "scala-native"),
         width = LANGUAGE_COLUMN_WIDTH
     );
+    println!(
+        "{:<width$}D{}",
+        "d",
+        feature_note(cfg!(feature = "dlang"), "dlang"),
+        width = LANGUAGE_COLUMN_WIDTH
+    );
+    println!(
+        "{:<width$}Fortran (gfortran, Intel; plain g77 form with --language fortran){}",
+        "fortran",
+        feature_note(cfg!(feature = "fortran"), "fortran"),
+        width = LANGUAGE_COLUMN_WIDTH
+    );
+    println!(
+        "{:<width$}Kotlin/Native{}",
+        "kotlin-native",
+        feature_note(cfg!(feature = "kotlin-native"), "kotlin-native"),
+        width = LANGUAGE_COLUMN_WIDTH
+    );
+    println!(
+        "{:<width$}Ada (GNAT){}",
+        "ada",
+        feature_note(cfg!(feature = "ada"), "ada"),
+        width = LANGUAGE_COLUMN_WIDTH
+    );
 }
 
 /// Translates the CLI flags into [`DemangleOptions`]. `--name-only` is a
@@ -609,7 +692,7 @@ fn main() -> ExitCode {
     let renderer = Renderer {
         pipeline: Pipeline {
             opts: demangle_options(&cli),
-            language: cli.language.map(LanguageArg::language),
+            language: cli.language,
             normalizer: cli.normalize.then(Normalizer::matching),
         },
         color: resolve_color(cli.color, cli.structured),
@@ -678,7 +761,7 @@ mod tests {
     fn test_pipeline_forced_language() {
         let pipeline = Pipeline {
             opts: DemangleOptions::complete(),
-            language: Some(Language::Swift),
+            language: Some(LanguageArg::Swift),
             normalizer: None,
         };
         // Not Swift, so the forced backend declines and the token passes
