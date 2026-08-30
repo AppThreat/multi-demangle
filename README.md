@@ -7,17 +7,17 @@ Python extension module. Fork of [symbolic-demangle](https://github.com/getsentr
 
 Currently supported languages are:
 
-| Language    | Mangling schemes / notes                                   | Cargo feature   |
-| ----------- | ---------------------------------------------------------- | --------------- |
-| C++         | Itanium ABI (GCC, Clang), GNU v2, CodeWarrior, and MSVC    | `cpp`, `gnuv2`, `codewarrior`, `msvc` |
-| Rust        | Both `legacy` and `v0` schemes                             | `rust`          |
-| Scala Native| Via the unknown-language fallback (symbols prefixed `_SM`) | `scala-native`  |
-| Swift       | Up to Swift 6.3.3, using a vendored Swift demangler        | `swift`         |
-| D           | D ABI mangling (`_D…`), incl. function types and templates | `dlang`         |
-| Fortran     | gfortran `mod_MOD_proc` and Intel `mod_mp_proc_`; the plain g77 `name_` form only via explicit request (see below) | `fortran` |
-| Kotlin/Native| `_kfun:` symbols with parameter types                     | `kotlin-native` |
-| Ada (GNAT)  | `pkg__sub` encoding with escapes, operators, and markers   | `ada`           |
-| ObjC        | Selectors plus runtime metadata symbols (`_OBJC_CLASS_$_…`, `_OBJC_IVAR_$_…`, selector references) | always on |
+| Language      | Mangling schemes / notes                                                                                           | Cargo feature                         |
+| ------------- | ------------------------------------------------------------------------------------------------------------------ | ------------------------------------- |
+| C++           | Itanium ABI (GCC, Clang), GNU v2, CodeWarrior, and MSVC                                                            | `cpp`, `gnuv2`, `codewarrior`, `msvc` |
+| Rust          | Both `legacy` and `v0` schemes                                                                                     | `rust`                                |
+| Scala Native  | Via the unknown-language fallback (symbols prefixed `_SM`)                                                         | `scala-native`                        |
+| Swift         | Up to Swift 6.3.3, using a vendored Swift demangler                                                                | `swift`                               |
+| D             | D ABI mangling (`_D…`), incl. function types and templates                                                         | `dlang`                               |
+| Fortran       | gfortran `mod_MOD_proc` and Intel `mod_mp_proc_`; the plain g77 `name_` form only via explicit request (see below) | `fortran`                             |
+| Kotlin/Native | `_kfun:` symbols with parameter types                                                                              | `kotlin-native`                       |
+| Ada (GNAT)    | `pkg__sub` encoding with escapes, operators, and markers                                                           | `ada`                                 |
+| ObjC          | Selectors plus runtime metadata symbols (`_OBJC_CLASS_$_…`, `_OBJC_IVAR_$_…`, selector references)                 | always on                             |
 
 All of the above features are enabled by default. Disabling them trims the
 corresponding demangler (and, for `swift`, the vendored C++ sources) from the build.
@@ -160,7 +160,7 @@ assert_eq!(
 Fortran module symbols demangle to `module::proc` for both gfortran
 (`__mod_MOD_proc`, with or without platform underscores) and Intel
 (`mod_mp_proc_`) conventions. The plain g77 form (`init_`, `my_sub__`) is
-*explicit-only*: any C symbol can end in `_`, so auto-detection never claims
+_explicit-only_: any C symbol can end in `_`, so auto-detection never claims
 it. Use `demangle_as("fortran", …)` (Rust) or `--language fortran` (CLI) to
 demangle that form.
 
@@ -421,15 +421,15 @@ $ multi-demangle '-[Foo bar:blub:]'
 
 Options:
 
-| Flag | Effect |
-| ---- | ------ |
-| `-n, --name-only` | names only, no parameters or return types |
-| `--no-parameters` / `--no-return-type` | individual output toggles |
-| `-l, --language <LANG>` | force a backend instead of auto-detecting (`cpp`, `rust`, `swift`, `objc`, `objcpp`, `d`, `fortran`, `kotlin-native`, `ada`, `scala-native`); forcing `fortran` also enables the plain g77 `name_` form |
-| `--normalize` | apply the symbol hygiene passes (`__imp_`, `@plt`, ELF versions, Rust hash suffixes and `$`-escapes, `.llvm.` clone suffixes, pseudo-symbols) to symbols that cannot be demangled, then demangle the cleaned symbol when it succeeds |
-| `-s, --structured` | print one JSON record per symbol with its status, language, linker decorations, and the structured fields (name, namespace, kind, parameters, return type, generics, hash) |
-| `--list-languages` | print the supported languages and the backends enabled in this build |
-| `--color=auto/always/never` | colorize successfully demangled output (auto is the default) |
+| Flag                                   | Effect                                                                                                                                                                                                                               |
+| -------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `-n, --name-only`                      | names only, no parameters or return types                                                                                                                                                                                            |
+| `--no-parameters` / `--no-return-type` | individual output toggles                                                                                                                                                                                                            |
+| `-l, --language <LANG>`                | force a backend instead of auto-detecting (`cpp`, `rust`, `swift`, `objc`, `objcpp`, `d`, `fortran`, `kotlin-native`, `ada`, `scala-native`); forcing `fortran` also enables the plain g77 `name_` form                              |
+| `--normalize`                          | apply the symbol hygiene passes (`__imp_`, `@plt`, ELF versions, Rust hash suffixes and `$`-escapes, `.llvm.` clone suffixes, pseudo-symbols) to symbols that cannot be demangled, then demangle the cleaned symbol when it succeeds |
+| `-s, --structured`                     | print one JSON record per symbol with its status, language, linker decorations, and the structured fields (name, namespace, kind, parameters, return type, generics, hash)                                                           |
+| `--list-languages`                     | print the supported languages and the backends enabled in this build                                                                                                                                                                 |
+| `--color=auto/always/never`            | colorize successfully demangled output (auto is the default)                                                                                                                                                                         |
 
 `multi-demangle --version` prints the crate version together with the enabled
 backends. Exit code is `0` on success — including when nothing looked mangled
