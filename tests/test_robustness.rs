@@ -28,9 +28,18 @@ const SEEDS: &[&str] = &[
     // Fortran
     "__my_module_MOD_my_proc",
     "my_module_mp_my_proc_",
-    // Kotlin/Native
-    "_kfun:com.example.Foo.bar(kotlin.String;kotlin.Int)",
-    "_kfun:main(kotlin.Array<kotlin.String>)",
+    // Kotlin/Native — real compiler shapes from tests/corpus/kotlin_symbols.txt
+    // (kotlinc-native 2.0.21): `#` visibility/static markers, `{}` body
+    // blocks, `<init>`/property-accessor names. The pre-Plan-08 dotted
+    // spelling (`_kfun:com.example.Foo.bar(kotlin.String)`) parsed as a bare
+    // name and exercised none of the grammar the compiler actually emits.
+    "kfun:com.example.Color#<init>(kotlin.String;kotlin.Int){}",
+    "kfun:com.example.Color#$getEnumAt#static(kotlin.Int){}com.example.Color",
+    "kfun:com.example.Color.$init_global#internal",
+    "kfun:com.example.Counter.Companion#create(){}com.example.Counter",
+    "kfun:com.example.Shape#area(){}kotlin.Double-trampoline",
+    "kfun:com.example.Counter#<get-$companion>#static(){}com.example.Counter.Companion",
+    "kfun:main(kotlin.Array<kotlin.String>){}",
     // ObjC metadata
     "_OBJC_CLASS_$_Foo",
     "_OBJC_IVAR_$_MyObject._count",

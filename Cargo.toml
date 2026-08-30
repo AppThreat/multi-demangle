@@ -86,3 +86,10 @@ criterion = "0.7"
 [[bench]]
 name = "batch"
 harness = false
+
+# Vendored fixes for dependency bugs the Plan 05 fuzz targets found (see the
+# PATCH.md files in vendor/); drop each section when upstream releases the fix.
+[patch.crates-io]
+scala-native-demangle = { path = "vendor/scala-native-demangle" }
+gnuv2_demangle = { path = "vendor/gnuv2_demangle" }
+msvc-demangler = { path = "vendor/msvc-demangler" }

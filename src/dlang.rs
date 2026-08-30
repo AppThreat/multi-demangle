@@ -138,7 +138,7 @@ fn is_symbol_name_at(input: &[u8], pos: usize) -> bool {
     }
 }
 
-/// The rendering of a basic type byte; `Some("")` marks `typeof(null)`.
+/// The rendering of a basic type byte.
 fn basic_type_name(b: u8) -> Option<&'static str> {
     Some(match b {
         b'v' => "void",
@@ -163,7 +163,7 @@ fn basic_type_name(b: u8) -> Option<&'static str> {
         b'a' => "char",
         b'u' => "wchar",
         b'w' => "dchar",
-        b'n' => "",
+        b'n' => "typeof(null)",
         _ => return None,
     })
 }
@@ -181,6 +181,11 @@ struct Demangler<'a> {
     parameters: Option<Vec<String>>,
     /// Template arguments of the symbol's leaf component.
     template_args: Option<Vec<String>>,
+    /// Type modifiers of the member-function this-parameter (`M<mods>`),
+    /// rendered as a qualifier suffix (`() const`). Verified against
+    /// `c++filt -s dlang`: `Mx` -> `() const`, `MOx` -> `() shared const`
+    /// (the modifiers render in mangled order).
+    this_qualifiers: Option<Vec<&'static str>>,
     kind: Option<DlangKind>,
 }
 
@@ -194,6 +199,7 @@ impl<'a> Demangler<'a> {
             depth: 0,
             parameters: None,
             template_args: None,
+            this_qualifiers: None,
             kind: None,
         }
     }
@@ -310,14 +316,23 @@ impl<'a> Demangler<'a> {
                 if is_root
                     && matches!(
                         self.peek(),
-                        Some(b'M') | Some(b'F') | Some(b'U') | Some(b'W') | Some(b'R') | Some(b'Y')
+                        Some(b'M')
+                            | Some(b'F')
+                            | Some(b'U')
+                            | Some(b'V')
+                            | Some(b'W')
+                            | Some(b'R')
+                            | Some(b'Y')
                     )
                 {
                     let member = self.peek() == Some(b'M');
+                    let mut this_qualifiers = Vec::new();
                     if member {
                         self.pos += 1;
-                        // Optional type modifiers of the this-parameter.
-                        self.skip_type_modifiers();
+                        // Optional type modifiers of the this-parameter are
+                        // the member function's own qualifiers; the reference
+                        // demangler renders them as a suffix (`() const`).
+                        self.parse_type_modifiers(&mut this_qualifiers);
                     }
                     let Some((rendered, params)) = self.parse_function_params() else {
                         break;
@@ -327,6 +342,9 @@ impl<'a> Demangler<'a> {
                     out.push(')');
                     if is_root {
                         self.parameters = Some(params);
+                        if !this_qualifiers.is_empty() {
+                            self.this_qualifiers = Some(this_qualifiers);
+                        }
                         self.kind = Some(if member {
                             DlangKind::Method
                         } else {
@@ -476,8 +494,25 @@ impl<'a> Demangler<'a> {
             return;
         };
         let real_pos = self.pos;
-        // The back reference points at a plain identifier (`<len><name>`).
         self.pos = pointed;
+        // The reference may point at an anonymous symbol (`_D1A0QbZ`): like
+        // the anonymous branch of the qualified-name walk, it renders as an
+        // empty component — the reference emits just the separator dot.
+        if self.peek() == Some(b'0') {
+            while self.peek() == Some(b'0') {
+                self.pos += 1;
+            }
+            let after_name = self.pos;
+            self.pos = real_pos;
+            // A back reference that reaches the end of the input fails like
+            // the reference implementation.
+            if after_name >= self.input.len() {
+                self.fail();
+            }
+            return;
+        }
+        // Otherwise the back reference points at a plain identifier
+        // (`<len><name>`).
         let Some(len) = self.decode_number() else {
             self.pos = real_pos;
             return;
@@ -920,9 +955,12 @@ impl<'a> Demangler<'a> {
     /// variadic marker of a function signature, returning the rendered
     /// parameter list and the individual parameter renderings.
     fn parse_function_params(&mut self) -> Option<(String, Vec<String>)> {
-        // Calling convention: F D, U C, W Windows, R C++, Y Objective-C.
+        // Calling convention: F D, U C, W Windows, V Pascal, R C++,
+        // Y Objective-C.
         match self.peek() {
-            Some(b'F') | Some(b'U') | Some(b'W') | Some(b'R') | Some(b'Y') => self.pos += 1,
+            Some(b'F') | Some(b'U') | Some(b'V') | Some(b'W') | Some(b'R') | Some(b'Y') => {
+                self.pos += 1
+            }
             _ => {
                 self.fail();
                 return None;
@@ -943,20 +981,37 @@ impl<'a> Demangler<'a> {
                     variadic = true;
                     break;
                 }
-                Some(b'M') => {
-                    // scope parameter
-                    self.pos += 1;
-                    let mut rendered = String::from("scope ");
-                    if !self.parse_parameter2(&mut rendered) {
-                        self.fail();
-                        return None;
+                Some(b'M') | Some(b'N')
+                    if (self.peek() == Some(b'M')
+                        && !matches!(
+                            self.peek_at(1),
+                            Some(b'F')
+                                | Some(b'U')
+                                | Some(b'V')
+                                | Some(b'W')
+                                | Some(b'R')
+                                | Some(b'Y')
+                        ))
+                        || self.peek_at(1) == Some(b'k') =>
+                {
+                    // Scope and return markers may combine (`MNkc` renders
+                    // "scope return creal"). An `M` followed by a calling
+                    // convention is instead a member-function *type*
+                    // parameter and falls through to the type parser.
+                    let mut rendered = String::new();
+                    loop {
+                        match self.peek() {
+                            Some(b'M') => {
+                                self.pos += 1;
+                                rendered.push_str("scope ");
+                            }
+                            Some(b'N') if self.peek_at(1) == Some(b'k') => {
+                                self.pos += 2;
+                                rendered.push_str("return ");
+                            }
+                            _ => break,
+                        }
                     }
-                    params.push(rendered);
-                }
-                Some(b'N') if self.peek_at(1) == Some(b'k') => {
-                    // return parameter
-                    self.pos += 2;
-                    let mut rendered = String::from("return ");
                     if !self.parse_parameter2(&mut rendered) {
                         self.fail();
                         return None;
@@ -1037,18 +1092,6 @@ impl<'a> Demangler<'a> {
     }
 
     // -- types ---------------------------------------------------------------
-
-    /// Skips (without rendering) a type modifier sequence; used after the
-    /// member-function `M` marker.
-    fn skip_type_modifiers(&mut self) {
-        loop {
-            match (self.peek(), self.peek_at(1)) {
-                (Some(b'O'), _) | (Some(b'x'), _) | (Some(b'y'), _) => self.pos += 1,
-                (Some(b'N'), Some(b'g')) => self.pos += 2,
-                _ => break,
-            }
-        }
-    }
 
     /// Parses type modifiers into `mods` (rendered as words). Returns whether
     /// any modifier was seen.
@@ -1265,7 +1308,23 @@ impl<'a> Demangler<'a> {
                 }
             }
             // Function types appearing as values (function pointers, ...).
-            Some(b'F') | Some(b'U') | Some(b'W') | Some(b'Y') => {
+            // (`R` above is the reference type.)
+            Some(b'F') | Some(b'U') | Some(b'V') | Some(b'W') | Some(b'Y') => {
+                if !self.parse_function_type_into(out) {
+                    return false;
+                }
+            }
+            Some(b'M') => {
+                // Member-function type: optional this-modifiers, then a
+                // function type. Parameters of this shape (`MRTiZv`) are
+                // what the reference renders as `scope … function`.
+                self.pos += 1;
+                let mut mods = Vec::new();
+                self.parse_type_modifiers(&mut mods);
+                for modifier in &mods {
+                    out.push_str(modifier);
+                    out.push(' ');
+                }
                 if !self.parse_function_type_into(out) {
                     return false;
                 }
@@ -1283,8 +1342,6 @@ impl<'a> Demangler<'a> {
                 _ => return false,
             },
             Some(b) => match basic_type_name(b) {
-                // typeof(null) is recognized but renders nothing.
-                Some("") => self.pos += 1,
                 Some(name) => {
                     self.pos += 1;
                     out.push_str(name);
@@ -1348,6 +1405,9 @@ struct ParsedSymbol {
     parts: DlangParts,
     /// The variable type prefix rendering, when the symbol is data.
     type_prefix: Option<String>,
+    /// The member-function qualifier suffix (` const`), when the this-parameter
+    /// carried type modifiers.
+    qualifier_suffix: Option<String>,
 }
 
 /// Runs the demangler over `symbol` and collects the rendering and structure.
@@ -1363,6 +1423,7 @@ fn parse_symbol(symbol: &str) -> Option<ParsedSymbol> {
                 template_args: None,
             },
             type_prefix: None,
+            qualifier_suffix: None,
         });
     }
     if !is_maybe_dlang(symbol) {
@@ -1415,6 +1476,9 @@ fn parse_symbol(symbol: &str) -> Option<ParsedSymbol> {
         path,
         parts,
         type_prefix,
+        qualifier_suffix: dem
+            .this_qualifiers
+            .map(|mods| format!(" {}", mods.join(" "))),
     })
 }
 
@@ -1506,6 +1570,13 @@ pub(crate) fn demangle(symbol: &str, opts: DemangleOptions) -> Option<String> {
         Some(ty) if opts.return_type => Some(format!("{ty} {base}")),
         _ => Some(base),
     }
+    .map(|out| match &parsed.qualifier_suffix {
+        // Member-function qualifiers (` const`, ...) trail the parameter
+        // list; like the parameters they are signature detail, so they drop
+        // from name-only renderings.
+        Some(suffix) if opts.parameters => format!("{out}{suffix}"),
+        _ => out,
+    })
 }
 
 /// Returns the parse structure of a D symbol for the structured extractor.
@@ -1598,7 +1669,10 @@ mod test {
             ("_D8demangle3fook", Some("uint demangle.foo")),
             ("_D8demangle3fool", Some("long demangle.foo")),
             ("_D8demangle3foom", Some("ulong demangle.foo")),
-            ("_D8demangle3foon", Some("demangle.foo")),
+            // Like every other basic type in this table, `n` renders its
+            // type before the variable name. It used to be the sole row that
+            // did not, because it mapped to the empty string.
+            ("_D8demangle3foon", Some("typeof(null) demangle.foo")),
             ("_D8demangle3fooo", Some("ifloat demangle.foo")),
             ("_D8demangle3foop", Some("idouble demangle.foo")),
             ("_D8demangle3fooq", Some("cfloat demangle.foo")),
@@ -1667,6 +1741,44 @@ mod test {
         assert_eq!(
             parts.parameters.as_deref(),
             Some(["int".to_string()].as_slice())
+        );
+    }
+
+    /// Member-function qualifiers: the this-parameter modifiers after `M`
+    /// render as a suffix on the parameter list. Expected renderings
+    /// cross-checked against `c++filt -s dlang`, including the combined
+    /// `MOx` -> `() shared const` order.
+    #[test]
+    fn member_function_qualifiers() {
+        assert_eq!(
+            dem("_D6corpus1S11constMethodMxFZv"),
+            "corpus.S.constMethod() const"
+        );
+        assert_eq!(
+            dem("_D6corpus1S12sharedMethodMOFZv"),
+            "corpus.S.sharedMethod() shared"
+        );
+        assert_eq!(
+            dem("_D6corpus1S15immutableMethodMyFZv"),
+            "corpus.S.immutableMethod() immutable"
+        );
+        assert_eq!(
+            dem("_D6corpus1S11inoutMethodMNgFZv"),
+            "corpus.S.inoutMethod() inout"
+        );
+        assert_eq!(
+            dem("_D6corpus1S17sharedConstMethodMOxFZv"),
+            "corpus.S.sharedConstMethod() shared const"
+        );
+        // Qualifiers are signature detail: they drop from name-only output,
+        // exactly like the parameter list.
+        assert_eq!(
+            demangle(
+                "_D6corpus1S11constMethodMxFZv",
+                DemangleOptions::name_only()
+            )
+            .as_deref(),
+            Some("corpus.S.constMethod")
         );
     }
 
@@ -1751,6 +1863,24 @@ mod test {
             Some("module.counter".to_string())
         );
         assert_eq!(dem("_D6module4dataPAi"), "int[]* module.data");
+    }
+
+    /// `typeof(null)` (the `n` basic type) is a real parameter and must
+    /// render, not vanish. It previously mapped to the empty string, which
+    /// dropped it from the parameter list entirely — `foo.bar(typeof(null))`
+    /// came out as `foo.bar()`, changing the apparent arity, and a `n` in the
+    /// middle of a list left an empty slot (`(a, , b)`). Found by the D
+    /// differential generator (Plan 05a); expectations from `c++filt -s
+    /// dlang`, which renders all three of these as written.
+    #[test]
+    fn typeof_null_parameters_render() {
+        assert_eq!(dem("_D3foo3barFnZv"), "foo.bar(typeof(null))");
+        assert_eq!(
+            dem("_D3foo3barFnnZn"),
+            "foo.bar(typeof(null), typeof(null))"
+        );
+        // The middle parameter kept its slot rather than emptying it.
+        assert_eq!(dem("_D3foo3barFinaZv"), "foo.bar(int, typeof(null), char)");
     }
 
     /// Symbols taken verbatim from `nm` over ldc2/gdc output for

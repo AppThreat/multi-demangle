@@ -1,13 +1,16 @@
 // Kotlin/Native corpus fixture.
 //
-// src/kotlin_native.rs parses the readable `kfun:` spelling: a dotted
-// qualified name, a `;`-separated parameter list, and an optional `:Ret`
-// suffix. Every declaration here maps onto one of those pieces.
+// src/kotlin_native.rs parses the readable `kfun:` spelling modern
+// Kotlin/Native emits: a dotted package path, `#`-separated member names and
+// compiler markers, a `;`-separated parameter list, a braced type-parameter
+// block, and a return type. Every declaration here maps onto one of those
+// pieces (plus the compiler-generated accessors, bridges, and trampolines
+// the declarations cause).
 //
-// The first thing to check after compiling is not whether the backend gets
-// these right — it is whether the compiler still emits `kfun:` at all, and
-// in which form. That answer determines whether the backend is covering
-// today's Kotlin/Native or a historical dialect.
+// Scope answer, verified with the 2.0.21 prebuilt compiler: `kfun:` is still
+// emitted, in volume — this small fixture produces ~950 of them. The dotted
+// `kfun:com.example.Foo.bar(...)` form shown in the 2018 GitHub issue the
+// backend was originally written from is NOT what current compilers emit.
 
 package com.example
 

@@ -221,33 +221,76 @@ impl Normalizer {
     ///
     /// Returns the input unchanged (borrowed) when no pass matches, so the
     /// function is safe to apply to a table of mixed symbols. Applying the
-    /// normalizer twice yields the same result as applying it once.
+    /// normalizer twice yields the same result as applying it once for the
+    /// suffix- and prefix-stripping passes: they run as fixed-point loops, so
+    /// layered decorations (`foo@plt@GLIBC_2.2.5`, `__imp___imp_foo`) clear in
+    /// a single application. The one exception is legacy Rust escape
+    /// decoding, which is deliberately one-level: it mirrors
+    /// `rustc_demangle`'s printer, so decoding must not re-decode the
+    /// replacement text (a decoded `$u24$` → `$` can sit next to characters
+    /// that then look like a fresh escape; re-decoding would corrupt names
+    /// such as `foo$C$bar`).
     ///
-    /// The passes run in a fixed order: pseudo-symbol mapping, import
-    /// pointers, `.llvm.` suffixes, Rust hash suffixes, legacy Rust escapes,
-    /// call stubs, ELF versions. The `.llvm.` pass runs before the Rust hash
-    /// pass so combined suffixes like `::h<hash>.llvm.<n>` strip cleanly.
+    /// The passes run in a fixed order: legacy Rust escape decoding (which
+    /// can materialize decoration, so it runs first), pseudo-symbol mapping,
+    /// import pointers, then the trailing-decoration loop (`.llvm.` suffixes,
+    /// Rust hash suffixes, call stubs, ELF versions — one layer per
+    /// iteration, whichever kind is currently the tail). The `.llvm.` check
+    /// precedes the Rust hash check so combined suffixes like
+    /// `::h<hash>.llvm.<n>` strip cleanly.
     pub fn normalize<'a>(&self, symbol: &'a str) -> Cow<'a, str> {
         if symbol.is_empty() {
             return Cow::Borrowed(symbol);
-        }
-
-        if self.pseudo_symbols {
-            if is_anonymous_symbol(symbol) {
-                return Cow::Owned("anonymous".to_string());
-            }
-            if is_except_table_symbol(symbol) {
-                return Cow::Owned("GCC_except_table".to_string());
-            }
-            if is_safe_seh_symbol(symbol) {
-                return Cow::Owned("SAFESEH".to_string());
-            }
         }
 
         // Strip offsets are computed against the current value first and
         // applied through `to_mut()` afterwards, so at most one allocation
         // happens no matter how many passes match.
         let mut current = Cow::Borrowed(symbol);
+
+        // Legacy escape decoding runs first because it can *materialize*
+        // decoration (`$u24$` → `@`, `$u5f$` → `_`, so `foo$u24$GLIBC_2.2.5`
+        // becomes a versioned symbol and `__$u5f$u5f$imp_foo` an import
+        // pointer): the passes below must see the decoded form, or a second
+        // `normalize` would strip one more layer. The pass only runs on
+        // symbols that actually look like legacy Rust (a rust mangling
+        // prefix, or any `$` escape); decoding `..` into `::` on arbitrary
+        // strings would corrupt normal text such as `x...y`.
+        //
+        // The rust-prefix half of the gate is evaluated on the symbol with
+        // its leading decoration prefixes removed as well: the strips below
+        // expose a hidden prefix (`j___ZN16…` becomes `__ZN16…`), and if the
+        // raw form declined the gate a second `normalize` would then decode
+        // what the first left alone.
+        if self.legacy_rust_escapes
+            && (is_rust_prefix(&current)
+                || is_rust_prefix(prefix_stripped_view(&current))
+                || current.contains('$'))
+        {
+            if let Cow::Owned(decoded) = decode_legacy_rust_escapes(&current) {
+                current = Cow::Owned(decoded);
+            }
+        }
+
+        // The pseudo-symbol predicates evaluate on the prefix-stripped view,
+        // for the same reason as the escape gate above: the strips hide
+        // nothing a second application would expose (`__imp_GCC_except_table5`
+        // maps to the placeholder here, not one `normalize` later). The
+        // `display` interplay is preserved: a rewritten import pointer
+        // (`__declspec(dllimport) …`) never matches a pseudo-symbol shape,
+        // and `__imp_anon.1234` mapped before the rewrite just as before.
+        if self.pseudo_symbols {
+            let view = prefix_stripped_view(&current);
+            if is_anonymous_symbol(&current) || is_anonymous_symbol(view) {
+                return Cow::Owned("anonymous".to_string());
+            }
+            if is_except_table_symbol(&current) || is_except_table_symbol(view) {
+                return Cow::Owned("GCC_except_table".to_string());
+            }
+            if is_safe_seh_symbol(&current) || is_safe_seh_symbol(view) {
+                return Cow::Owned("SAFESEH".to_string());
+            }
+        }
 
         if self.import_pointer_rewrite {
             if let Some(prefix_len) = import_pointer_prefix_len(&current) {
@@ -256,44 +299,56 @@ impl Normalizer {
                     .replace_range(0..prefix_len, "__declspec(dllimport) ");
             }
         } else if self.import_pointer_strip {
-            if let Some(prefix_len) = import_pointer_prefix_len(&current) {
+            // Layered prefixes (`__imp___imp_foo`) must all clear in one
+            // application: each rewrite consumes the prefix, so a second
+            // `normalize` would strip another layer and break idempotence.
+            while let Some(prefix_len) = import_pointer_prefix_len(&current) {
                 current.to_mut().replace_range(0..prefix_len, "");
             }
         }
 
-        if self.llvm_suffix {
-            if let Some(end) = llvm_suffix_end(&current) {
-                current.to_mut().truncate(end);
+        // Trailing decorations strip as one fixed-point loop: every
+        // iteration removes exactly one suffix — whichever kind is now the
+        // tail — so a stack like `foo@plt@GLIBC_2.2.5` (or a version strip
+        // exposing a `.llvm.` counter) reaches its final form in a single
+        // `normalize` instead of peeling one more layer per call. Each kind
+        // only runs when its pass is enabled; termination is guaranteed
+        // because every strip shortens the symbol.
+        if self.llvm_suffix || self.rust_hash || self.call_stubs || self.elf_version {
+            if self.call_stubs && !is_msvc_prefixed(&current) {
+                // Jump-thunk prefixes sit at the front and cannot be (re)
+                // exposed by tail strips, so they clear once, up front.
+                while current.starts_with("j_") {
+                    current.to_mut().replace_range(0..2, "");
+                }
             }
-        }
-
-        if self.rust_hash {
-            if let Some(end) = rust_hash_end(&current) {
-                current.to_mut().truncate(end);
-            }
-        }
-
-        // The legacy escape pass only runs on symbols that actually look
-        // like legacy Rust (a rust mangling prefix, or any `$` escape);
-        // decoding `..` into `::` on arbitrary strings would corrupt normal
-        // text such as `x...y`.
-        if self.legacy_rust_escapes && (is_rust_prefix(&current) || current.contains('$')) {
-            if let Cow::Owned(decoded) = decode_legacy_rust_escapes(&current) {
-                current = Cow::Owned(decoded);
-            }
-        }
-
-        if self.call_stubs {
-            if let Some((start, at)) = call_stub_kept_range(&current) {
-                let s = current.to_mut();
-                s.replace_range(at..s.len(), "");
-                s.replace_range(0..start, "");
-            }
-        }
-
-        if self.elf_version {
-            if let Some((base_end, _version)) = split_version(&current) {
-                current.to_mut().truncate(base_end);
+            loop {
+                let s: &str = &current;
+                if self.llvm_suffix {
+                    if let Some(end) = llvm_suffix_end(s) {
+                        current.to_mut().truncate(end);
+                        continue;
+                    }
+                }
+                if self.rust_hash {
+                    if let Some(end) = rust_hash_end(s) {
+                        current.to_mut().truncate(end);
+                        continue;
+                    }
+                }
+                if self.call_stubs {
+                    if let Some(end) = call_stub_suffix_end(s) {
+                        current.to_mut().truncate(end);
+                        continue;
+                    }
+                }
+                if self.elf_version {
+                    if let Some((base_end, _version)) = split_version(s) {
+                        current.to_mut().truncate(base_end);
+                        continue;
+                    }
+                }
+                break;
             }
         }
 
@@ -655,6 +710,29 @@ fn is_msvc_prefixed(symbol: &str) -> bool {
 }
 
 /// Byte length of the outermost import pointer prefix, if any.
+/// The symbol with its leading decoration prefixes (`j_` thunks, import
+/// pointers, and their layering) removed. A pure view: nothing is mutated.
+///
+/// Used by the escape-decode gate in [`Normalizer::normalize`], whose strips
+/// expose prefixes that the raw string hides.
+fn prefix_stripped_view(symbol: &str) -> &str {
+    let mut view = symbol;
+    loop {
+        let before = view;
+        if let Some(len) = import_pointer_prefix_len(view) {
+            view = &view[len..];
+        }
+        while view.starts_with("j_") {
+            view = &view[2..];
+        }
+        // Every strip removes a non-empty prefix; an unchanged length means
+        // the view is stable.
+        if view.len() == before.len() {
+            return view;
+        }
+    }
+}
+
 fn import_pointer_prefix_len(symbol: &str) -> Option<usize> {
     for prefix in ["__imp_", "_imp_", ".rdata$", ".refptr."] {
         if let Some(inner) = symbol.strip_prefix(prefix) {
@@ -731,6 +809,21 @@ fn is_call_stub_token(token: &str) -> bool {
         token.to_ascii_lowercase().as_str(),
         "plt" | "got" | "gotpcrel" | "gotoff"
     )
+}
+
+/// Byte index where the symbol ends after removing one trailing call-stub
+/// suffix (`@plt`, `@GOTPCREL`, ...), if present. One layer per call — the
+/// normalize pipeline loops it so a `.llvm.` or version strip can expose the
+/// next layer.
+fn call_stub_suffix_end(symbol: &str) -> Option<usize> {
+    if is_msvc_prefixed(symbol) {
+        return None;
+    }
+    let idx = symbol.rfind('@')?;
+    if idx == 0 {
+        return None;
+    }
+    is_call_stub_token(&symbol[idx + 1..]).then_some(idx)
 }
 
 /// Strips a trailing `.cold` cold-section suffix, if present.

@@ -3,16 +3,22 @@
 //! GNAT flattens Ada's hierarchical names into `pkg__child__subprogram`
 //! symbols with a set of small encodings on top: the `_ada_` prefix marks
 //! library-level subprograms, `__<digits>` disambiguates body/spec and
-//! overload numbers, trailing `X`/`N`/`E`/`B` markers encode calling
-//! conventions and task bodies, `B_<digits>` components are anonymous
+//! overload numbers, package elaboration procedures are leaves named
+//! `_elabb`/`_elabs` (rendered `pkg'Elab_Body`/`pkg'Elab_Spec`), task and
+//! record types carry generated companions (`TB` task body, `IP`
+//! initialization procedure, `E`/`Z` elaboration and size variables), `B`
+//! markers encode task bodies, `B_<digits>` components are anonymous
 //! blocks, `U<hex>`/`W<hex>` escape non-lowercase characters, and operator
 //! subprograms are named `O<name>`.
 //!
 //! The encoding is documented in GCC's `ada/exp_dbug.ads` ("Encoding of
-//! Identifiers"); the structure of this implementation follows the
-//! MIT-licensed `ada-demangle` crate by Pernosco
-//! (<https://github.com/Pernosco/ada-demangle>), with operator rendering
-//! (quoted, as `pkg."="`) matching the GNU reference demangler.
+//! Identifiers"); the compiler-generated task companions that the `.ads`
+//! only implies are built in `exp_ch9.adb` (`TB` body procedure, `E`
+//! elaboration variable, `Z` storage-size variable, `V` corresponding
+//! record) and `exp_ch3.adb` (`IP` initialization procedure). The structure
+//! of this implementation follows the MIT-licensed `ada-demangle` crate by
+//! Pernosco (<https://github.com/Pernosco/ada-demangle>), with operator
+//! rendering (quoted, as `pkg."="`) matching the GNU reference demangler.
 //!
 //! # Examples
 //!
@@ -43,6 +49,9 @@ pub(crate) struct AdaSymbol {
     /// Leaf name; operators render quoted (`"="`), which is also what
     /// distinguishes them.
     pub name: String,
+    /// The package elaboration procedure (`_elabb`/`_elabs` leaf), rendered
+    /// with attribute syntax (`corpus'Elab_Body`) instead of a dot path.
+    pub elab: Option<&'static str>,
     /// Whether the `B` marker marked this as a task body. Not recoverable
     /// from the rendered name, unlike the operator/plain distinction.
     pub task_body: bool,
@@ -50,9 +59,17 @@ pub(crate) struct AdaSymbol {
 
 impl AdaSymbol {
     /// Renders the symbol the way Ada source spells it: dot-separated path
-    /// with the leaf appended.
+    /// with the leaf appended. Elaboration procedures render with attribute
+    /// syntax, matching the GNU reference demangler.
     pub fn render(&self) -> String {
         let mut out = self.namespace.join(".");
+        if let Some(elab) = self.elab {
+            if !out.is_empty() {
+                out.push('\'');
+            }
+            out.push_str(elab);
+            return out;
+        }
         if !out.is_empty() {
             out.push('.');
         }
@@ -251,16 +268,76 @@ pub(crate) fn parse(symbol: &str) -> Option<AdaSymbol> {
         namespace.push(decode_identifier(prefix)?);
     }
 
-    // The leaf may carry a trailing calling-convention/task-body marker
-    // (`X`/`N`/`E`/`B`); uppercase only occurs in markers and escapes, so
-    // scanning for the last marker byte is safe.
-    let (leaf_bytes, task_body) = match rest
-        .iter()
-        .rposition(|b| matches!(b, b'X' | b'N' | b'E' | b'B'))
+    // Package elaboration procedures are leaves named `_elabb`/`_elabs`
+    // (exp_dbug.ads). They only attach to a package path — a bare `__elabb`
+    // has nothing to elaborate — and render with attribute syntax.
+    let elab = if rest == b"_elabb" && !namespace.is_empty() {
+        Some("Elab_Body")
+    } else if rest == b"_elabs" && !namespace.is_empty() {
+        Some("Elab_Spec")
+    } else {
+        None
+    };
+
+    // Compiler-generated task companions (exp_ch9.adb): the task body
+    // procedure `<task>TB` for an explicit task type (`<task>TKB` for the
+    // `TK`-qualified spelling newer compilers document), and the
+    // initialization procedure `<type>IP` (exp_ch3.adb), which for a
+    // task/protected type hangs off its corresponding record `<type>V`
+    // (exp_dbug.ads). Uppercase never occurs in plain identifiers, so these
+    // suffixes can only be markers.
+    let mut task_body = false;
+    if let Some(base) = rest
+        .strip_suffix(&b"TKB"[..])
+        .or_else(|| rest.strip_suffix(&b"TB"[..]))
     {
-        Some(idx) => (&rest[..idx], rest[idx] == b'B'),
+        if base.is_empty() {
+            return None;
+        }
+        task_body = true;
+        rest = base;
+    } else if let Some(init_base) = rest.strip_suffix(&b"IP"[..]) {
+        if init_base.is_empty() {
+            return None;
+        }
+        rest = init_base.strip_suffix(b"V").unwrap_or(init_base);
+        if rest.is_empty() {
+            return None;
+        }
+    }
+
+    // The remaining leaf may carry a trailing calling-convention/task marker
+    // (`X`/`N`/`E`/`Z`/`B`: convention suffixes, the task/unit elaboration
+    // flag `_E`, the task storage-size variable `Z`, anonymous task bodies
+    // `B`); uppercase only occurs in markers and escapes, so scanning for
+    // the last marker byte is safe. Some markers are joined by an
+    // underscore (`corpus__child_E`), so a trailing separator after the
+    // strip is part of the marker: Ada identifiers cannot end in `_`.
+    let (leaf_bytes, marker_task_body) = match rest
+        .iter()
+        .rposition(|b| matches!(b, b'X' | b'N' | b'E' | b'Z' | b'B'))
+    {
+        Some(idx) => {
+            let mut leaf = &rest[..idx];
+            while leaf.last() == Some(&b'_') {
+                leaf = &leaf[..leaf.len() - 1];
+            }
+            (leaf, rest[idx] == b'B')
+        }
         None => (rest, false),
     };
+    let task_body = task_body || marker_task_body;
+
+    if let Some(elab) = elab {
+        // An elaboration leaf carries no additional name; the full leaf was
+        // the `_elabb`/`_elabs` marker itself.
+        return Some(AdaSymbol {
+            namespace,
+            name: String::new(),
+            elab: Some(elab),
+            task_body,
+        });
+    }
     if leaf_bytes.is_empty() {
         return None;
     }
@@ -272,6 +349,7 @@ pub(crate) fn parse(symbol: &str) -> Option<AdaSymbol> {
     Some(AdaSymbol {
         namespace,
         name,
+        elab: None,
         task_body,
     })
 }
@@ -360,6 +438,44 @@ mod test {
         assert!(parsed.task_body);
         assert_eq!(parsed.namespace, ["module"]);
         assert_eq!(parsed.name, "my_task");
+
+        // Explicit task types name their body procedure `<task>TB`
+        // (exp_ch9.adb, `Build_Task_Proc_Specification`); newer compilers
+        // document the `TK`-qualified spelling. `c++filt -s gnat` has no
+        // handling for either — this rendering is ours, per exp_dbug.ads.
+        assert_eq!(dem("corpus__workerTB"), "corpus.worker");
+        assert_eq!(dem("p__taskobjTKB"), "p.taskobj");
+        let parsed = parse("corpus__workerTB").expect("parses");
+        assert!(parsed.task_body);
+    }
+
+    /// Package elaboration procedures: the `_elabb`/`_elabs` leaves render
+    /// with attribute syntax, matching `c++filt -s gnat` (`corpus___elabb`
+    /// -> `corpus'Elab_Body`). A plain `elabb` leaf without the leading
+    /// underscore is an ordinary identifier, as in the reference demangler.
+    #[test]
+    fn elaboration_procedures() {
+        assert_eq!(dem("corpus___elabb"), "corpus'Elab_Body");
+        assert_eq!(dem("corpus___elabs"), "corpus'Elab_Spec");
+        assert_eq!(dem("a__b___elabb"), "a.b'Elab_Body");
+        assert_eq!(dem("corpus__elabb"), "corpus.elabb");
+        // Nothing to elaborate.
+        assert_eq!(demangle("__elabb", DemangleOptions::complete()), None);
+    }
+
+    /// Compiler-generated task companions: `E` (elaboration flag) and `Z`
+    /// (storage-size variable) strip as markers; `IP` is the initialization
+    /// procedure of a type, which for a task type hangs off its
+    /// corresponding record `V` (exp_ch9.adb / exp_ch3.adb). The reference
+    /// demangler fails on all of these; the renderings follow exp_dbug.ads.
+    #[test]
+    fn task_companions() {
+        assert_eq!(dem("corpus__workerE"), "corpus.worker");
+        assert_eq!(dem("corpus__workerZ"), "corpus.worker");
+        assert_eq!(dem("corpus__valueIP"), "corpus.value");
+        assert_eq!(dem("corpus__workerVIP"), "corpus.worker");
+        // A single-letter marker with no leaf underneath stays rejected.
+        assert_eq!(demangle("corpus_E", DemangleOptions::complete()), None);
     }
 
     #[test]

@@ -28,18 +28,26 @@ RUN apt-get update \
         binutils \
         libncurses6 \
         zlib1g \
+        openjdk-17-jre-headless \
     && rm -rf /var/lib/apt/lists/*
 
-# The Kotlin/Native compiler ships as a self-contained tarball. The first
-# invocation downloads a platform dependency bundle, so the image runs the
-# compiler once at build time to bake that in — otherwise every container
-# start pays for it.
+# The Kotlin/Native compiler ships as a tarball but is not self-contained:
+# `kotlinc-native` is a JVM application (hence the JRE above), and its first
+# invocation downloads a platform dependency bundle (its own LLVM and sysroot,
+# several hundred MB). The throwaway compile below runs that download once at
+# build time so container runs do not pay for it again.
 RUN curl -fsSL -o /tmp/kn.tar.gz \
         "https://github.com/JetBrains/kotlin/releases/download/v${KOTLIN_VERSION}/kotlin-native-prebuilt-linux-x86_64-${KOTLIN_VERSION}.tar.gz" \
     && mkdir -p /opt/kotlin-native \
     && tar -xzf /tmp/kn.tar.gz -C /opt/kotlin-native --strip-components=1 \
     && rm /tmp/kn.tar.gz
 ENV PATH="/opt/kotlin-native/bin:${PATH}"
+
+# Bake the platform dependency bundle into the image with a minimal compile.
+RUN mkdir -p /tmp/bake && cd /tmp/bake \
+    && printf 'fun main() { println("ok") }\n' > bake.kt \
+    && kotlinc-native -produce static -o bake ./bake.kt >/dev/null 2>&1 \
+    && rm -rf /tmp/bake
 
 RUN { \
       echo "image: multi-demangle/kotlin-native"; \

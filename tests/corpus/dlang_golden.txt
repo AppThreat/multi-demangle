@@ -1,0 +1,94 @@
+# Golden tier: renderings verified against GNU c++filt -s dlang.
+# Regenerate with contrib/scripts/update-corpus-expectations.sh;
+# a mismatch in tests/test_new_language_corpus.rs is a bug.
+_D11TypeInfo_xi6__initZ	initializer for TypeInfo_xi
+_D15TypeInfo_HAyaxi6__initZ	initializer for TypeInfo_HAyaxi
+_D15TypeInfo_xHAyai6__initZ	initializer for TypeInfo_xHAyai
+_D19TypeInfo_C6corpus1I6__initZ	initializer for TypeInfo_C6corpus1I
+_D19TypeInfo_E6corpus1E6__initZ	initializer for TypeInfo_E6corpus1E
+_D19TypeInfo_S6corpus1S6__initZ	initializer for TypeInfo_S6corpus1S
+_D19TypeInfo_S6corpus1U6__initZ	initializer for TypeInfo_S6corpus1U
+_D23TypeInfo_S6corpus5Outer6__initZ	initializer for TypeInfo_S6corpus5Outer
+_D30TypeInfo_S6corpus5Outer6Middle6__initZ	initializer for TypeInfo_S6corpus5Outer6Middle
+_D36TypeInfo_S6corpus5Outer6Middle5Inner6__initZ	initializer for TypeInfo_S6corpus5Outer6Middle5Inner
+_D42TypeInfo_S6corpus__T15TemplatedStructTiZQu6__initZ	initializer for TypeInfo_S6corpus__T15TemplatedStructTiZQu
+_D46TypeInfo_S6corpus__T15TemplatedStructTHAyaiZQy6__initZ	initializer for TypeInfo_S6corpus__T15TemplatedStructTHAyaiZQy
+_D6corpus__T10withStringVAyaa5_68656c6c6fZQBeFNaNbNiNfZv	corpus.withString!("hello").withString()
+_D6corpus__T14TemplatedClassTiTAyaZQx6__initZ	initializer for corpus.TemplatedClass!(int, immutable(char)[]).TemplatedClass
+_D6corpus__T14TemplatedClassTiTAyaZQx6__vtblZ	vtable for corpus.TemplatedClass!(int, immutable(char)[]).TemplatedClass
+_D6corpus__T14TemplatedClassTiTAyaZQx6methodMFiQqZv	corpus.TemplatedClass!(int, immutable(char)[]).TemplatedClass.method(int, immutable(char)[])
+_D6corpus__T14TemplatedClassTiTAyaZQx7__ClassZ	ClassInfo for corpus.TemplatedClass!(int, immutable(char)[]).TemplatedClass
+_D6corpus__T15TemplatedStructTHAyaiZQy11__xopEqualsMxFKxSQCd__TQBzTQBlZQChZb	corpus.TemplatedStruct!(int[immutable(char)[]]).TemplatedStruct.__xopEquals(ref const(corpus.TemplatedStruct!(int[immutable(char)[]]).TemplatedStruct)) const
+_D6corpus__T15TemplatedStructTHAyaiZQy3getMFNaNbNiNfZQx	corpus.TemplatedStruct!(int[immutable(char)[]]).TemplatedStruct.get()
+_D6corpus__T15TemplatedStructTHAyaiZQy6__initZ	initializer for corpus.TemplatedStruct!(int[immutable(char)[]]).TemplatedStruct
+_D6corpus__T15TemplatedStructTHAyaiZQy6methodMFNaNbNiNfZv	corpus.TemplatedStruct!(int[immutable(char)[]]).TemplatedStruct.method()
+_D6corpus__T15TemplatedStructTHAyaiZQy9__xtoHashFNbNeKxSQCc__TQByTQBkZQCgZm	corpus.TemplatedStruct!(int[immutable(char)[]]).TemplatedStruct.__xtoHash(ref const(corpus.TemplatedStruct!(int[immutable(char)[]]).TemplatedStruct))
+_D6corpus__T15TemplatedStructTiZQu3getMFNaNbNiNfZi	corpus.TemplatedStruct!(int).TemplatedStruct.get()
+_D6corpus__T15TemplatedStructTiZQu6__initZ	initializer for corpus.TemplatedStruct!(int).TemplatedStruct
+_D6corpus__T15TemplatedStructTiZQu6methodMFNaNbNiNfZv	corpus.TemplatedStruct!(int).TemplatedStruct.method()
+_D6corpus__T8identityTAiZQnFNaNbNiNfQoZQr	corpus.identity!(int[]).identity(int[])
+_D6corpus__T8identityTAyaZQoFNaNbNiNfQpZQs	corpus.identity!(immutable(char)[]).identity(immutable(char)[])
+_D6corpus__T8identityTiZQmFNaNbNiNfiZi	corpus.identity!(int).identity(int)
+_D6corpus__T8identityTSQv1SZQqFQjZQm	corpus.identity!(corpus.S).identity(corpus.S)
+_D6corpus__T9twoParamsTiTAyaZQrFNaNbNiNfiQqZv	corpus.twoParams!(int, immutable(char)[]).twoParams(int, immutable(char)[])
+_D6corpus__T9withValueTiVii42ZQsFNaNbNiNfiZi	corpus.withValue!(int, 42).withValue(int)
+_D6corpus10assocArrayFHAyaiZQg	corpus.assocArray(int[immutable(char)[]])
+_D6corpus11__moduleRefZ	corpus.__moduleRef
+_D6corpus11instantiateFZv	corpus.instantiate()
+_D6corpus11staticArrayFG4iZQe	corpus.staticArray(int[4])
+_D6corpus12__ModuleInfoZ	ModuleInfo for corpus
+_D6corpus12dynamicArrayFAiZQd	corpus.dynamicArray(int[])
+_D6corpus13outerFunctionFZ14nestedFunctionMFNaNbNiNfZv	corpus.outerFunction().nestedFunction()
+_D6corpus13outerFunctionFZ14nestedWithArgsMFNaNbNiNfiZi	corpus.outerFunction().nestedWithArgs(int)
+_D6corpus13outerFunctionFZv	corpus.outerFunction()
+_D6corpus14nestedCompoundFHAyaAxPiZv	corpus.nestedCompound(const(int*)[][immutable(char)[]])
+_D6corpus15__modsharedctorFZv	corpus.__modsharedctor()
+_D6corpus15immutableStringFAyaZQe	corpus.immutableString(immutable(char)[])
+_D6corpus15returnsDelegateFZDFiZi	corpus.returnsDelegate()
+_D6corpus15takesAggregatesFSQBa1SCQBg1CCQBm1ISQBs1UZv	corpus.takesAggregates(corpus.S, corpus.C, corpus.I, corpus.U)
+_D6corpus18__unittest_L136_C1FZv	corpus.__unittest_L136_C1()
+_D6corpus19_staticCtor_L132_C1FZv	corpus._staticCtor_L132_C1()
+_D6corpus19_staticDtor_L133_C1FZv	corpus._staticDtor_L133_C1()
+_D6corpus1C11finalMethodMFZv	corpus.C.finalMethod()
+_D6corpus1C12staticMethodFZv	corpus.C.staticMethod()
+_D6corpus1C6__ctorMFZCQuQp	corpus.C.this()
+_D6corpus1C6__dtorMFZv	corpus.C.~this()
+_D6corpus1C6__initZ	initializer for corpus.C
+_D6corpus1C6__vtblZ	vtable for corpus.C
+_D6corpus1C6methodMFZv	corpus.C.method()
+_D6corpus1C7__ClassZ	ClassInfo for corpus.C
+_D6corpus1C8toStringMFZAya	corpus.C.toString()
+_D6corpus1I11__InterfaceZ	Interface for corpus.I
+_D6corpus1S10__postblitMFZv	corpus.S.this(this)
+_D6corpus1S11constMethodMxFZv	corpus.S.constMethod() const
+_D6corpus1S12staticMethodFZv	corpus.S.staticMethod()
+_D6corpus1S4propMFNdZi	corpus.S.prop()
+_D6corpus1S6__ctorMFNciZSQxQs	corpus.S.this(int)
+_D6corpus1S6__dtorMFZv	corpus.S.~this()
+_D6corpus1S6__initZ	initializer for corpus.S
+_D6corpus1S6methodMFZv	corpus.S.method()
+_D6corpus1S8opAssignMFNcNjSQzQuZQg	corpus.S.opAssign(corpus.S)
+_D6corpus1U6__initZ	initializer for corpus.U
+_D6corpus25_sharedStaticCtor_L134_C1FZv	corpus._sharedStaticCtor_L134_C1()
+_D6corpus5Outer6__initZ	initializer for corpus.Outer
+_D6corpus5Outer6Middle5Inner12deeplyNestedMFZv	corpus.Outer.Middle.Inner.deeplyNested()
+_D6corpus5Outer6Middle5Inner6__initZ	initializer for corpus.Outer.Middle.Inner
+_D6corpus5Outer6Middle6__initZ	initializer for corpus.Outer.Middle
+_D6corpus7Derived6__ctorMFZCQBaQw	corpus.Derived.this()
+_D6corpus7Derived6__initZ	initializer for corpus.Derived
+_D6corpus7Derived6__vtblZ	vtable for corpus.Derived
+_D6corpus7Derived6methodMFZv	corpus.Derived.method()
+_D6corpus7Derived7__ClassZ	ClassInfo for corpus.Derived
+_D6corpus7intFuncFiZi	corpus.intFunc(int)
+_D6corpus7pointerFPiZQd	corpus.pointer(int*)
+_D6corpus8constArgFxiZxi	corpus.constArg(const(int))
+_D6corpus8inoutArgFANgiZQf	corpus.inoutArg(inout(int)[])
+_D6corpus8manyArgsFilfabZd	corpus.manyArgs(int, long, float, char, bool)
+_D6corpus8variadicFiYv	corpus.variadic(int, ...)
+_D6corpus8voidFuncFZv	corpus.voidFunc()
+_D6corpus9__modctorFZv	corpus.__modctor()
+_D6corpus9__moddtorFZv	corpus.__moddtor()
+_D6corpus9__modtestFZv	corpus.__modtest()
+_D6corpus9sharedArgFOiZOi	corpus.sharedArg(shared(int))
+_D6corpus9takesEnumFEQt1EZv	corpus.takesEnum(corpus.E)
+_Dmain	D main

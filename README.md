@@ -176,13 +176,21 @@ assert_eq!(
 );
 ```
 
-Kotlin/Native symbols (`_kfun:…`, e.g. in Kotlin Multiplatform `.framework`
-binaries) render with their parameter types and `kotlin.` prefix elision:
-`_kfun:com.example.Foo.bar(kotlin.String;kotlin.Int)` becomes
-`com.example.Foo.bar(String, Int)`. Ada (GNAT) symbols decode the
-`pkg__sub` encoding — `_ada_` prefixes, `__N` body suffixes, `X`/`N`/`E`/`B`
-markers, `U`/`W` character escapes, anonymous blocks, and operator names
-(`module__Oadd` → `module."+"`).
+Kotlin/Native symbols still carry the readable `kfun:` prefix (verified
+against the 2.0.20x compilers; see `contrib/fixtures/kotlin/`), in the
+modern spelling `kfun:<pkg>#<member>(<params>){<bounds>}<ret>`. They render
+with their parameter and return types and `kotlin.` prefix elision:
+`kfun:com.example.Counter#increment(kotlin.Int){}kotlin.Int` becomes
+`com.example.Counter.increment(Int): Int`. Compiler markers (`#static`,
+`#internal`) render as trailing name segments, and `-trampoline` thunks keep
+a ` [trampoline]` marker so they do not alias the function they dispatch to.
+
+Ada (GNAT) symbols decode the `pkg__sub` encoding — `_ada_` prefixes, `__N`
+body suffixes, elaboration procedures (`corpus___elabb` →
+`corpus'Elab_Body`), compiler-generated task companions (`TB` task body,
+`IP` initialization procedure, `E`/`Z` variables), `U`/`W` character
+escapes, anonymous blocks, and operator names (`module__Oadd` →
+`module."+"`).
 
 ObjC support now also recognizes runtime metadata symbols —
 `_OBJC_CLASS_$_Foo`, `_OBJC_METACLASS_$_Foo`, `_OBJC_IVAR_$_Foo.bar`, and

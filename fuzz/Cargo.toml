@@ -1,0 +1,52 @@
+[package]
+name = "multi-demangle-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2021"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+# The `Demangle` trait is implemented on `symbolic_common::Name`, so the
+# targets need the same version multi-demangle builds its public API against.
+symbolic-common = "13.9.0"
+
+[dependencies.multi-demangle]
+path = ".."
+
+[[bin]]
+name = "demangle"
+path = "fuzz_targets/demangle.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "detect"
+path = "fuzz_targets/detect.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "normalize"
+path = "fuzz_targets/normalize.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "swift_ffi"
+path = "fuzz_targets/swift_ffi.rs"
+test = false
+doc = false
+bench = false
+
+# Must mirror the root manifest's section: this is a separate workspace, and
+# [patch.crates-io] does not propagate across them.
+[patch.crates-io]
+scala-native-demangle = { path = "../vendor/scala-native-demangle" }
+gnuv2_demangle = { path = "../vendor/gnuv2_demangle" }
+msvc-demangler = { path = "../vendor/msvc-demangler" }

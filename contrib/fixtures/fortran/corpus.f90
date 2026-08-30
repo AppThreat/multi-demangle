@@ -5,13 +5,11 @@
 ! and the resulting symbols are ground truth that no hand-written test can
 ! contradict.
 !
-! OPEN QUESTION this fixture exists to settle: src/fortran.rs strips a
-! trailing `_<digits>` from the procedure part, documented as a gfortran
-! "rename length suffix". That rule is unverified, and if it is wrong it
-! silently corrupts every procedure whose name ends in _<digits> —
-! `interp_3` would demangle to `interp`. The `interp_3` / `solve_2d` /
-! `step_12` procedures below decide it: compare the emitted symbol against
-! the source name.
+! SETTLED with this fixture: src/fortran.rs once stripped a trailing
+! `_<digits>` from the procedure part, which would have silently corrupted
+! every procedure whose name ends in digits. The emitted symbols below
+! (`__numerics_MOD_interp_3`, `__numerics_MOD_step_12`) show gfortran
+! appends no such suffix; the backend keeps the digits.
 
 module m
   implicit none

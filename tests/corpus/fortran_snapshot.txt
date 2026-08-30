@@ -1,0 +1,3 @@
+# Snapshot tier: stable output, refreshed deliberately.
+# Regenerate with MULTI_DEMANGLE_UPDATE_SNAPSHOTS=1 cargo test --test test_new_language_corpus
+# and review the diff.

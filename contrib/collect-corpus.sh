@@ -12,6 +12,8 @@
 #   contrib/collect-corpus.sh build            # build the toolchain images
 #   contrib/collect-corpus.sh collect          # write tests/corpus/*.txt
 #   contrib/collect-corpus.sh diff [lang]      # differential vs c++filt
+#   contrib/collect-corpus.sh diff-fuzz [count] [seed]
+#                                              # generator-driven differential
 #   contrib/collect-corpus.sh all
 #
 # Kotlin/Native is opt-in (WITH_KOTLIN=1): its image is a ~1 GB download and
@@ -68,6 +70,38 @@ collect() {
     echo "==> new-languages-provenance.txt"
 }
 
+# Reads a `syms<TAB>gnu<TAB>ours` comparison table and reports the
+# classification shared by `diff` and `diff-fuzz`. Both tools echo the input
+# unchanged when they cannot demangle, so "output == input" is the rejection
+# test. c++filt's gnat mode has a second failure spelling: it wraps the
+# symbol in angle brackets (`<corpus__workerTB>`). Counting that as a
+# successful demangle would invent functional gaps that do not exist — the
+# reference failed too.
+classify_cmp() {
+    local title="$1" cmp="$2"
+    local total agree reject differ
+    total=$(wc -l <"$cmp")
+    local gnu_failed='($2==$1) || ($2 ~ /^<.*>$/)'
+    agree=$(awk -F'\t' '$2==$3' "$cmp" | wc -l)
+    reject=$(awk -F'\t' "\$1==\$3 && !($gnu_failed)" "$cmp" | wc -l)
+    differ=$(awk -F'\t' "\$1!=\$3 && !($gnu_failed) && \$2!=\$3" "$cmp" | wc -l)
+
+    echo "=== $title ==="
+    printf 'total symbols:                   %s\n' "$total"
+    printf 'exact agreement:                 %s\n' "$agree"
+    printf 'we reject, c++filt demangles:    %s   <- functional gaps\n' "$reject"
+    printf 'both demangle, rendering differs: %s\n' "$differ"
+
+    if [ "$reject" -gt 0 ]; then
+        echo; echo "--- functional gaps ---"
+        awk -F"\t" "\$1==\$3 && !($gnu_failed) {printf \"%-52s -> %s\\n\", \$1, \$2}" "$cmp"
+    fi
+    if [ "$differ" -gt 0 ]; then
+        echo; echo "--- rendering differences ---"
+        awk -F"\t" "\$1!=\$3 && !($gnu_failed) && \$2!=\$3 {printf \"sym: %s\\n  gnu: %s\\n  us : %s\\n\", \$1, \$2, \$3}" "$cmp"
+    fi
+}
+
 # Differential comparison against GNU c++filt, which embeds libiberty's
 # independent D and GNAT demanglers. Rendering differences are expected and
 # informative; *acceptance* differences (we reject what c++filt demangles)
@@ -91,38 +125,41 @@ diff_lang() {
     done <"$tmp/syms.txt" >>"$tmp/ours.txt"
 
     paste -d'\t' "$tmp/syms.txt" "$tmp/gnu.txt" "$tmp/ours.txt" >"$tmp/cmp.tsv"
-    local total agree reject differ
-    total=$(wc -l <"$tmp/syms.txt")
-    # Both tools echo the input unchanged when they cannot demangle, so
-    # "output == input" is the rejection test. c++filt's gnat mode has a
-    # second failure spelling: it wraps the symbol in angle brackets
-    # (`<corpus__workerTB>`). Counting that as a successful demangle would
-    # invent functional gaps that do not exist — the reference failed too.
-    local gnu_failed='($2==$1) || ($2 ~ /^<.*>$/)'
-    agree=$(awk -F'\t' '$2==$3' "$tmp/cmp.tsv" | wc -l)
-    reject=$(awk -F'\t' "\$1==\$3 && !($gnu_failed)" "$tmp/cmp.tsv" | wc -l)
-    differ=$(awk -F'\t' "\$1!=\$3 && !($gnu_failed) && \$2!=\$3" "$tmp/cmp.tsv" | wc -l)
+    classify_cmp "$lang vs c++filt -s $fmt" "$tmp/cmp.tsv"
+}
 
-    echo "=== $lang vs c++filt -s $fmt ==="
-    printf 'total symbols:                   %s\n' "$total"
-    printf 'exact agreement:                 %s\n' "$agree"
-    printf 'we reject, c++filt demangles:    %s   <- functional gaps\n' "$reject"
-    printf 'both demangle, rendering differs: %s\n' "$differ"
+# Generator-driven differential (Plan 05): synthesizes D symbols from the ABI
+# grammar (contrib/scripts/gen_dlang_symbols.py — from the spec, not from the
+# parser's shape) and classifies every disagreement with the same rules as
+# `diff`. Symbols the oracle itself rejects are generator noise and are
+# counted separately ("both reject") so they cannot masquerade as agreement.
+diff_fuzz() {
+    local count="${1:-50000}" seed="${2:-1}" fmt=dlang
+    local gen="$CONTRIB/scripts/gen_dlang_symbols.py"
 
-    if [ "$reject" -gt 0 ]; then
-        echo; echo "--- functional gaps ---"
-        awk -F"\t" "\$1==\$3 && !($gnu_failed) {printf \"%-52s -> %s\\n\", \$1, \$2}" "$tmp/cmp.tsv"
-    fi
-    if [ "$differ" -gt 0 ]; then
-        echo; echo "--- rendering differences ---"
-        awk -F"\t" "\$1!=\$3 && !($gnu_failed) && \$2!=\$3 {printf \"sym: %s\\n  gnu: %s\\n  us : %s\\n\", \$1, \$2, \$3}" "$tmp/cmp.tsv"
-    fi
+    [ -x "$CLI" ] || { echo "build the CLI first: cargo build --bin multi-demangle" >&2; return 1; }
+
+    local tmp; tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' RETURN
+    python3 "$gen" --count "$count" --seed "$seed" >"$tmp/syms.txt"
+    # Filter mode: one token per line in, one demangled (or echoed) line out.
+    "$CLI" <"$tmp/syms.txt" >"$tmp/ours.txt"
+    docker run --rm -i --entrypoint c++filt "$GNU_IMAGE" -s "$fmt" <"$tmp/syms.txt" >"$tmp/gnu.txt"
+    paste -d'\t' "$tmp/syms.txt" "$tmp/gnu.txt" "$tmp/ours.txt" >"$tmp/cmp.tsv"
+
+    classify_cmp "generated D symbols (seed $seed) vs c++filt -s dlang" "$tmp/cmp.tsv"
+
+    local both
+    both=$(awk -F'\t' '($2==$1) && ($3==$1)' "$tmp/cmp.tsv" | wc -l)
+    printf 'both reject (generator noise):   %s\n' "$both"
+    echo; echo "--- we demangle, c++filt rejects ---"
+    awk -F'\t' '($2==$1) && ($3!=$1) {printf "%-60s -> %s\n", $1, $3}' "$tmp/cmp.tsv" | head -20
 }
 
 case "${1:-all}" in
-    build)   build_images ;;
-    collect) collect ;;
-    diff)    diff_lang "${2:-dlang}" ;;
+    build)     build_images ;;
+    collect)   collect ;;
+    diff)      diff_lang "${2:-dlang}" ;;
+    diff-fuzz) diff_fuzz "${2:-50000}" "${3:-1}" ;;
     all)
         build_images
         collect
@@ -130,7 +167,7 @@ case "${1:-all}" in
         diff_lang ada || true
         ;;
     *)
-        echo "usage: $0 <build|collect|diff [lang]|all>" >&2
+        echo "usage: $0 <build|collect|diff [lang]|diff-fuzz [count] [seed]|all>" >&2
         exit 2
         ;;
 esac

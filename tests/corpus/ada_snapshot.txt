@@ -1,0 +1,16 @@
+# Snapshot tier: stable output, refreshed deliberately.
+# Regenerate with MULTI_DEMANGLE_UPDATE_SNAPSHOTS=1 cargo test --test test_new_language_corpus
+# and review the diff.
+DW.ref.__gnat_personality_v0	<rejected>
+b.2	<rejected>
+corpus_E	<rejected>
+corpus__child_E	corpus.child
+corpus__compute__B_1__anonymously_nested.1	corpus.compute.anonymously_nested
+corpus__valueIP	corpus.value
+corpus__workerE	corpus.worker
+corpus__workerTB	corpus.worker
+corpus__workerVIP	corpus.worker
+corpus__workerZ	corpus.worker
+corpus__worker___finalizer.2	corpus.worker._finalizer
+main___finalizer.1	main._finalizer
+wT1.0	<rejected>

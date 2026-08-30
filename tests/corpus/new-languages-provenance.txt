@@ -1,0 +1,13 @@
+# Collected 2026-08-30T03:19:20Z via contrib/collect-corpus.sh
+image: multi-demangle/gnu-toolchains
+base: debian:bookworm-slim
+arch: arm64
+gfortran: GNU Fortran (Debian 12.2.0-14+deb12u1) 12.2.0
+gnatmake: GNATMAKE 12.2.0
+ldc2: LDC - the LLVM D compiler (1.30.0):
+gdc: gdc (Debian 12.2.0-14+deb12u1) 12.2.0
+binutils: GNU nm (GNU Binutils for Debian) 2.40
+image: multi-demangle/kotlin-native
+base: debian:bookworm-slim (linux/amd64)
+kotlin-native: 2.0.21
+binutils: GNU nm (GNU Binutils for Debian) 2.40

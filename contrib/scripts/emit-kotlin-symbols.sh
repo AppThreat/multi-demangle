@@ -38,6 +38,13 @@ case "${1:-symbols}" in
         [ "${#artifacts[@]}" -gt 0 ] || { echo "kotlin: no artifacts produced" >&2; exit 1; }
         nm --defined-only "${artifacts[@]}" 2>/dev/null |
             awk 'NF && $NF !~ /:$/ {print $NF}' |
+            grep -E '^_*kfun:' |
+            sort -u |
+            # Keep the corpus small and legible (grammar coverage, not
+            # volume): every symbol of the fixture's own package, plus a
+            # deterministic ~1-in-8 sample of the compiler/runtime symbols
+            # for background coverage of box/unbox, coroutines, arrays.
+            awk '{ if ($0 ~ /com\.example/) print; else if (NR % 8 == 0) print }' |
             sort -u
         ;;
     *)

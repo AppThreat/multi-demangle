@@ -1,0 +1,30 @@
+# Snapshot tier: stable output, refreshed deliberately.
+# Regenerate with MULTI_DEMANGLE_UPDATE_SNAPSHOTS=1 cargo test --test test_new_language_corpus
+# and review the diff.
+DW.ref.__gdc_personality_v0	<rejected>
+DW.ref._d_eh_personality	<rejected>
+GCC_except_table40	<rejected>
+_D19TypeInfo_E6corpus1E6__initZ.3413	<rejected>
+_D19TypeInfo_S6corpus1S6__initZ.3224	<rejected>
+_D19TypeInfo_S6corpus1U6__initZ.3381	<rejected>
+_D23TypeInfo_S6corpus5Outer6__initZ.3503	<rejected>
+_D30TypeInfo_S6corpus5Outer6Middle6__initZ.3507	<rejected>
+_D36TypeInfo_S6corpus5Outer6Middle5Inner6__initZ.3511	<rejected>
+_D42TypeInfo_S6corpus__T15TemplatedStructTiZQu6__initZ.3555	<rejected>
+_D46TypeInfo_S6corpus__T15TemplatedStructTHAyaiZQy6__initZ.3563	<rejected>
+_D6corpus13takesDelegateFDFiZiZv	corpus.takesDelegate(int delegate(int))
+_D6corpus14moduleVariablei	int corpus.moduleVariable
+_D6corpus15gsharedVariablei	int corpus.gsharedVariable
+_D6corpus1C7__ClassZ.3335	<rejected>
+_D6corpus1I11__InterfaceZ.3376	<rejected>
+_D6corpus20takesFunctionPointerFPFiZiZv	corpus.takesFunctionPointer(int function(int))
+_D6corpus7Derived7__ClassZ.3353	<rejected>
+_D6corpus__T14TemplatedClassTiTAyaZQx7__ClassZ.3642	<rejected>
+_D6object__T10RTInfoImplVAmA2i8i1ZQwyG2m	immutable(ulong[2]) object.RTInfoImpl!([8, 1]).RTInfoImpl
+_Z10cppLinkagev	cppLinkage()
+cLinkage	<rejected>
+gdc.dso_ctor	<rejected>
+gdc.dso_dtor	<rejected>
+gdc.dso_initialized	<rejected>
+gdc.dso_slot	<rejected>
+main	<rejected>

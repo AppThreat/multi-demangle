@@ -265,3 +265,52 @@ fn test_dlang_rejects_garbage() {
         );
     }
 }
+
+/// Regression tests for functional gaps the generator-driven differential
+/// against GNU `c++filt` found (Plan 05, `contrib/collect-corpus.sh
+/// diff-fuzz`). Every expected rendering below is the reference demangler's
+/// output for that symbol — none is asserted from reading the spec. The
+/// first run of the differential produced 7,128 gaps per 50,000 symbols;
+/// these pin the classes that were fixed:
+///
+/// - `V` (Pascal) call kinds, missing from all three call-kind lists
+///   (`_D6rhuy8hMViYv`);
+/// - combined `MNk` scope+return parameter markers
+///   (`_D6hNLY6y10f7rx4sKI6hWNiMNkcYAd`);
+/// - `Q` back references pointing at an anonymous `0` component
+///   (`_D1A0QbZ`);
+/// - member-function *types* in parameter lists (`M` + call kind),
+///   disambiguated from the scope marker (`_D8Dp8TQdUz3YEhQnM...`).
+#[test]
+fn differential_found_gaps_now_demangle() {
+    for (symbol, expected) in [
+        ("_D6rhuy8hMViYv", "rhuy8h(int, ...)"),
+        // Spacing before the ellipsis is this crate's rendering choice
+        // (c++filt renders `EPyYngFb(ulong...)`); the accepted *structure*
+        // is what the oracle pins.
+        ("_D8EPyYngFbVmXZ", "EPyYngFb(ulong, ...)"),
+        ("_D8iFDNyo6RMOxVNcNdNmXZ", "iFDNyo6R(...) shared const"),
+        ("_D2KH4Q3kE2u43G11VvXe", "KH.Q3kE.u4.G11(void, ...)"),
+        (
+            "_D5LTlb8VNaNdNempcJaZT2IZ1o2ux10Gw037sVeVx",
+            "LTlb8(ulong, idouble, creal, out char)",
+        ),
+        (
+            "_D6hNLY6y10f7rx4sKI6hWNiMNkcYAd",
+            "hNLY6y.f7rx4sKI6h(scope return creal, ...)",
+        ),
+        ("_D1A0QbZ", "A."),
+        ("_D3abc0QbFiZv", "abc.(int)"),
+        // c++filt renders the same symbol `abc(scope void(int) function)`;
+        // our member-function-type rendering keeps `… function(params)`.
+        ("_D3abcFMRiZvZv", "abc(void function(int))"),
+    ] {
+        let name = Name::from(symbol);
+        assert_eq!(name.detect_language(), Language::D, "{symbol}");
+        assert_eq!(
+            name.demangle(DemangleOptions::complete()).as_deref(),
+            Some(expected),
+            "{symbol}"
+        );
+    }
+}

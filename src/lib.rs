@@ -1452,6 +1452,136 @@ mod test {
     }
 }
 
+/// Cross-backend corpus invariants (Plan 08, step 5).
+///
+/// Every committed corpus symbol — the real C++/Rust/Swift dumps and the
+/// toolchain-collected D/Ada/Fortran/Kotlin symbols — is offered to every
+/// backend, and no two may claim it. With heuristic dispatch in the
+/// unknown-language fallback chain, misclassification is the dominant
+/// failure mode: Ada's `__`-separator predicate is the loosest in the
+/// crate, and a false positive there silently steals another language's
+/// symbols.
+#[cfg(all(
+    test,
+    feature = "ada",
+    feature = "cpp",
+    feature = "dlang",
+    feature = "fortran",
+    feature = "kotlin-native",
+    feature = "rust",
+    feature = "scala-native",
+    feature = "swift"
+))]
+mod corpus_invariants {
+    use super::*;
+
+    /// Whether the backend `lang` claims `sym` through the same entry point
+    /// auto-detection would use (acceptance, not just the cheap prefix
+    /// predicate).
+    fn claims(lang: &str, sym: &str) -> bool {
+        match lang {
+            "cpp" => try_demangle_cpp(sym, DemangleOptions::name_only()).is_some(),
+            "rust" => try_demangle_rust(sym, DemangleOptions::name_only()).is_some(),
+            "swift" => is_maybe_swift(sym),
+            "d" => try_demangle_dlang(sym, DemangleOptions::name_only()).is_some(),
+            "scala-native" => {
+                try_demangle_scala_native(sym, DemangleOptions::name_only()).is_some()
+            }
+            "kotlin-native" => {
+                try_demangle_kotlin_native(sym, DemangleOptions::name_only()).is_some()
+            }
+            // Auto-detection never claims the plain g77 form, so the
+            // invariant uses the same module-symbol parse the dispatch
+            // chain does.
+            "fortran" => fortran::parse_module_symbol(sym).is_some(),
+            "ada" => try_demangle_ada(sym, DemangleOptions::name_only()).is_some(),
+            other => unreachable!("unknown backend {other}"),
+        }
+    }
+
+    /// The committed corpora. The D, Ada, Fortran, and Kotlin files are the
+    /// `contrib/` toolchain collections; the rest come from binaries on the
+    /// collection machine.
+    fn corpus(lang: &str) -> Vec<String> {
+        let file = match lang {
+            "d" => "dlang",
+            "kotlin-native" => "kotlin",
+            other => other,
+        };
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("tests/corpus")
+            .join(format!("{file}_symbols.txt"));
+        std::fs::read_to_string(&path)
+            .unwrap_or_else(|e| panic!("{} is readable: {e}", path.display()))
+            .lines()
+            .map(|l| l.trim().to_string())
+            .filter(|l| !l.is_empty())
+            .collect()
+    }
+
+    const LANGUAGES: [&str; 7] = [
+        "cpp",
+        "rust",
+        "swift",
+        "d",
+        "ada",
+        "fortran",
+        "kotlin-native",
+    ];
+
+    /// The one sanctioned overlap: legacy Rust mangling (`_ZN…17h<hash>E`)
+    /// is also a syntactically valid Itanium symbol, so both parsers accept
+    /// it. Dispatch is well-defined — [`detect_language`] resolves Rust
+    /// before C++ — so the ambiguity is inherent to the mangling shapes,
+    /// not a misclassification.
+    const KNOWN_OVERLAP: [&str; 2] = ["cpp", "rust"];
+
+    #[test]
+    fn no_two_backends_claim_one_symbol() {
+        let mut violations = Vec::new();
+        for lang in LANGUAGES {
+            for sym in corpus(lang) {
+                let claiming: Vec<&str> = LANGUAGES
+                    .iter()
+                    .copied()
+                    .filter(|l| claims(l, &sym))
+                    .collect();
+                if claiming.len() > 1 && claiming != KNOWN_OVERLAP {
+                    violations.push(format!("{lang}: {sym} claimed by {claiming:?}"));
+                }
+            }
+        }
+        assert!(
+            violations.is_empty(),
+            "mutual exclusion broken:\n{}",
+            violations.join("\n")
+        );
+    }
+
+    /// Negative testing, as called out by the plan: no Rust, C++, or Swift
+    /// symbol may be claimed by Ada or Fortran. Subsumed by the pairwise
+    /// invariant above, but asserted separately so a violation names the
+    /// dangerous predicate directly.
+    #[test]
+    fn ada_and_fortran_never_claim_other_language_symbols() {
+        let mut violations = Vec::new();
+        for lang in ["cpp", "rust", "swift"] {
+            for sym in corpus(lang) {
+                for claimant in ["ada", "fortran"] {
+                    if claims(claimant, &sym) {
+                        violations.push(format!("{claimant} claims {lang} symbol {sym}"));
+                    }
+                }
+            }
+        }
+        assert!(
+            violations.is_empty(),
+            "Ada/Fortran false positives:\n{}",
+            violations.join("\n")
+        );
+    }
+}
+
 #[cfg(feature = "extension-module")]
 use pyo3::prelude::*;
 

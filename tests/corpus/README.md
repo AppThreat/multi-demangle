@@ -29,15 +29,57 @@ Collected 2026-08-29 on macOS 26.6 (arm64); `nm` from the Xcode toolchain.
 | ---- | ------ | ----- |
 | `rust_symbols.txt` | `nm` over `~/.cargo/bin/rust-analyzer` and `~/.cargo/bin/wasm-pack` (rustup-distributed release binaries) | legacy (`_ZN…E`, macOS `__ZN…`) and v0 (`_RN…`) Rust mangling |
 
-### New-language corpora (pending)
+### New-language corpora (toolchain-collected)
 
-The D, Fortran, Kotlin/Native, and Ada backends (Plan 07) are covered by
-table-driven tests derived from the upstream oracles (LLVM's D demangler test
-suite, the D ABI specification, CMake's `FortranCInterface` survey, and the
-MIT-licensed `ada-demangle` test suite) plus a deterministic mutation suite
-(`tests/test_robustness.rs`). Real-symbol corpus dumps for these languages
-await toolchain collection — extend `scripts/collect-corpus.sh` with a
-gfortran/LDC/kotlin-native/GNAT fixture when those toolchains are available.
+The D, Ada, Fortran, and Kotlin/Native symbols are collected by compiling
+the fixtures in `contrib/fixtures/` inside pinned toolchain images and
+dumping the resulting symbol tables:
+
+```bash
+WITH_KOTLIN=1 contrib/collect-corpus.sh build
+WITH_KOTLIN=1 contrib/collect-corpus.sh collect
+```
+
+`new-languages-provenance.txt` records the exact compiler versions; the
+symbol spelling is a compiler implementation detail, so the provenance is
+part of the test data's meaning.
+
+`tests/test_new_language_corpus.rs` checks each language's rendering against
+two authority tiers, in separate `<lang>_golden.txt` / `<lang>_snapshot.txt`
+files (`<symbol>\t<expected>` lines; `<rejected>` pins a symbol the pipeline
+must not claim):
+
+- **golden** — verified against GNU `c++filt` (D, Ada) or against the
+  fixture's source declarations (Fortran round-trip, Kotlin/Native). A
+  mismatch is a bug and fails CI. The D and Ada files regenerate via
+  `contrib/scripts/update-corpus-expectations.sh`; the Fortran and
+  Kotlin/Native ones are hand-curated from the fixtures.
+- **snapshot** — merely stable: the documented deliberate divergences from
+  the reference, and symbols it fails. A mismatch needs a deliberate refresh
+  (`MULTI_DEMANGLE_UPDATE_SNAPSHOTS=1 cargo test --test
+  test_new_language_corpus`) reviewed like any snapshot update.
+
+Splitting the tiers is deliberate: one undifferentiated pile of snapshots
+gets refreshes rubber-stamped, which is how a regression becomes an
+"expected output update".
+
+D and Ada are additionally under a CI ratchet: the
+`new-language-differential` workflow job re-collects both corpora inside the
+toolchain image, diffs against `c++filt`, and fails when the functional-gap
+count (symbols the reference demangles and we reject) rises above the
+baseline recorded in the workflow — 0 for D, 1 for Ada (`b.2`, the
+deliberate rejection). Rendering differences never fail the job. The same
+corpora feed the cross-backend invariants in `src/lib.rs`
+(`corpus_invariants`): no symbol may be claimed by two backends, and Ada or
+Fortran may never claim a Rust, C++, or Swift symbol.
+
+| File | Source | Notes |
+| ---- | ------ | ----- |
+| `dlang_symbols.txt` | ldc2 1.30 + gdc 12.2 over `contrib/fixtures/dlang/corpus.d` (inside `contrib/docker/gnu-toolchains`) | the full D ABI type grammar; includes deliberately-unmangled C-linkage controls |
+| `ada_symbols.txt` | gnat 12.2 over `contrib/fixtures/ada/` | packages, child packages, operators, overloads, task bodies, escapes; includes the rejected-with-intent `b.2` |
+| `fortran_symbols.txt` | gfortran 12.2 over `contrib/fixtures/fortran/corpus.f90` | module procedures (incl. names ending in digits), submodules, g77 bare forms |
+| `kotlin_symbols.txt` | kotlinc-native 2.0.21 over `contrib/fixtures/kotlin/corpus.kt` (inside `contrib/docker/kotlin-native`) | every `com.example` symbol plus a 1-in-8 runtime sample |
+
 | `swift_symbols.txt` | `nm` over the `libswiftCore.dylib` bundled inside `/Applications/The Unarchiver.app` (Apple Swift runtime, current version 1001.0.82) | current (`_$s…`/`_$S…`) and pre-Swift-5 (`_T0`/`_Tt`) mangling; system Swift dylibs live in the dyld shared cache and carry no symbol table, hence an app-bundled copy |
 | `cpp_symbols.txt` | `nm` over the Xcode `clang++` binary (Apple clang 21.0.0) | Itanium ABI (`_ZN…`/`__ZN…`) |
 
