@@ -14,6 +14,7 @@ keywords = ["demangler", "binary"]
 
 [tool.maturin]
 python-source = "python"
+include = [{ path = "vendor/**/*", format = "sdist" }]
 
 authors = [
     { name = "Team AppThreat", email = "cloud@appthreat.com" }
