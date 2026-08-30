@@ -1,0 +1,30 @@
+# Golden tier — Fortran.
+#
+# No demangling oracle exists for Fortran, so the authority here is a
+# round-trip against the fixture: contrib/fixtures/fortran/corpus.f90
+# declares each module entity by name, gfortran 12.2 emits the symbol in
+# the first column, and the rendering must spell the source name. The
+# `<rejected>` lines pin the auto-detection policy: the plain g77 form
+# (`standalone_`, `two_words_`) is explicit-only because any C symbol can
+# end in `_`, and `main`/`MAIN__`/`options.0.0` are compiler artifacts no
+# Fortran backend should claim.
+#
+# Regenerate by hand from the fixture when it changes; see
+# tests/test_new_language_corpus.rs.
+__m_MOD_bar	m::bar
+__m_MOD_counter	m::counter
+__m_MOD_foo	m::foo
+__my_module_MOD_a_b_c_d	my_module::a_b_c_d
+__my_module_MOD_my_proc	my_module::my_proc
+__my_module_MOD_shared_state	my_module::shared_state
+__numerics_MOD_interp_3	numerics::interp_3
+__numerics_MOD_plain	numerics::plain
+__numerics_MOD_solve_2d	numerics::solve_2d
+__numerics_MOD_step_12	numerics::step_12
+__grid2_MOD_a_very_long_procedure_name_that_goes_on_for_a_while	grid2::a_very_long_procedure_name_that_goes_on_for_a_while
+__parent_mod_MOD_child_proc	parent_mod::child_proc
+standalone_	<rejected>
+two_words_	<rejected>
+main	<rejected>
+MAIN__	<rejected>
+options.0.0	<rejected>

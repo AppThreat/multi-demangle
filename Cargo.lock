@@ -284,8 +284,6 @@ dependencies = [
 [[package]]
 name = "gnuv2_demangle"
 version = "0.4.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3f4eda49d36ceaaaf3af38940a636b0514472cdba8b2158b20b58e91e50df4c7"
 
 [[package]]
 name = "half"
@@ -354,8 +352,6 @@ dependencies = [
 [[package]]
 name = "msvc-demangler"
 version = "0.11.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "fbeff6bd154a309b2ada5639b2661ca6ae4599b34e8487dc276d2cd637da2d76"
 dependencies = [
  "bitflags",
  "itoa",
@@ -363,7 +359,7 @@ dependencies = [
 
 [[package]]
 name = "multi-demangle"
-version = "1.2.0"
+version = "2.0.0"
 dependencies = [
  "cc",
  "clap",
@@ -589,8 +585,6 @@ dependencies = [
 [[package]]
 name = "scala-native-demangle"
 version = "0.0.6"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0a4416eddc0eaf31e04aa4039bd3db4288ea1ba613955d86cf9c310049c5d1e2"
 
 [[package]]
 name = "serde"

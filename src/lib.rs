@@ -6,7 +6,12 @@
 //! - Rust (both `legacy` and `v0`) (`features = ["rust"]`)
 //! - Scala Native via the unknown-language fallback (`features = ["scala-native"]`)
 //! - Swift (up to Swift 6.3.3) (`features = ["swift"]`)
-//! - ObjC (only symbol detection)
+//! - D (`features = ["dlang"]`)
+//! - Fortran, gfortran and Intel module symbols; the plain g77 `name_` form
+//!   is explicit-only (`features = ["fortran"]`)
+//! - Kotlin/Native (`features = ["kotlin-native"]`)
+//! - Ada / GNAT (`features = ["ada"]`)
+//! - ObjC (selectors plus runtime metadata symbol detection)
 //!
 //! As the demangling schemes for the languages are different, the supported demangling features are
 //! inconsistent. For example, argument types were not encoded in legacy Rust mangling and thus not
@@ -56,7 +61,11 @@ use std::os::raw::{c_char, c_int};
 
 use symbolic_common::{Language, Name, NameMangling};
 
+mod ada;
+mod dlang;
+mod fortran;
 mod hygiene;
+mod kotlin_native;
 mod structured;
 
 pub use hygiene::{
@@ -243,6 +252,44 @@ pub(crate) fn is_maybe_md5(ident: &str) -> bool {
         && ident[3..35].chars().all(|c| c.is_ascii_hexdigit())
 }
 
+/// Detects D symbols (`_D` + a qualified name starting with a length digit,
+/// an anonymous `0`, or a `Q` back reference; `_Dmain` special-cased).
+pub(crate) fn is_maybe_dlang(ident: &str) -> bool {
+    dlang::is_maybe_dlang(ident)
+}
+
+/// Detects Kotlin/Native symbols, which carry the `kfun:` prefix (plus any
+/// platform underscores).
+pub(crate) fn is_maybe_kotlin_native(ident: &str) -> bool {
+    ident.starts_with("_kfun:") || ident.starts_with("__kfun:") || ident.starts_with("kfun:")
+}
+
+/// Detects Ada (GNAT) symbols: ASCII identifiers with `__` separators, the
+/// `_ada_` prefix, or an operator name.
+pub(crate) fn is_maybe_ada(ident: &str) -> bool {
+    ada::is_maybe_ada(ident)
+}
+
+/// Detects the unambiguous Fortran module forms (`__mod_MOD_proc`,
+/// `mod_MOD_proc`, `mod_mp_proc_`). The plain g77 `name_` form is
+/// deliberately not detected; it is reachable only through [`demangle_as`].
+pub(crate) fn is_maybe_fortran(ident: &str) -> bool {
+    fortran::parse_module_symbol(ident).is_some()
+}
+
+/// Detects Objective-C runtime metadata symbols: class/metaclass/ivar
+/// objects and emitted selector references. These dominate non-Swift Mach-O
+/// symbol tables.
+pub(crate) fn is_maybe_objc_metadata(ident: &str) -> bool {
+    ident.starts_with("_OBJC_CLASS_$_")
+        || ident.starts_with("_OBJC_METACLASS_$_")
+        // Misspelling seen in some toolchain outputs.
+        || ident.starts_with("_OBJC_METCLASS_$_")
+        || ident.starts_with("_OBJC_IVAR_$_")
+        || ident.starts_with("l_OBJC_SELECTOR")
+        || ident.starts_with("OBJC_SELECTOR_REFERENCES")
+}
+
 /// Delegates Swift symbol detection to the vendored Swift demangler via FFI.
 /// Symbols containing interior NUL bytes cannot be passed as C strings and are rejected.
 #[cfg(feature = "swift")]
@@ -333,6 +380,66 @@ fn try_demangle_scala_native(ident: &str, opts: DemangleOptions) -> Option<Strin
 
 #[cfg(not(feature = "scala-native"))]
 fn try_demangle_scala_native(_ident: &str, _opts: DemangleOptions) -> Option<String> {
+    None
+}
+
+/// Demangles D symbols through the grammar port in [`dlang`].
+#[cfg(feature = "dlang")]
+fn try_demangle_dlang(ident: &str, opts: DemangleOptions) -> Option<String> {
+    dlang::demangle(ident, opts)
+}
+
+#[cfg(not(feature = "dlang"))]
+fn try_demangle_dlang(_ident: &str, _opts: DemangleOptions) -> Option<String> {
+    None
+}
+
+/// Demangles Kotlin/Native symbols through the `kfun:` pretty-printer.
+#[cfg(feature = "kotlin-native")]
+fn try_demangle_kotlin_native(ident: &str, opts: DemangleOptions) -> Option<String> {
+    kotlin_native::demangle(ident, opts)
+}
+
+#[cfg(not(feature = "kotlin-native"))]
+fn try_demangle_kotlin_native(_ident: &str, _opts: DemangleOptions) -> Option<String> {
+    None
+}
+
+/// Demangles Ada (GNAT) symbols.
+#[cfg(feature = "ada")]
+fn try_demangle_ada(ident: &str, opts: DemangleOptions) -> Option<String> {
+    ada::demangle(ident, opts)
+}
+
+#[cfg(not(feature = "ada"))]
+fn try_demangle_ada(_ident: &str, _opts: DemangleOptions) -> Option<String> {
+    None
+}
+
+/// Demangles the unambiguous Fortran module forms. The plain g77 form is not
+/// included here; auto-detection never claims it.
+#[cfg(feature = "fortran")]
+fn try_demangle_fortran(ident: &str, _opts: DemangleOptions) -> Option<String> {
+    // The mangling carries no type information, so the options have no
+    // effect on the rendering.
+    fortran::parse_module_symbol(ident).map(|s| s.render())
+}
+
+#[cfg(not(feature = "fortran"))]
+fn try_demangle_fortran(_ident: &str, _opts: DemangleOptions) -> Option<String> {
+    None
+}
+
+/// Demangles a Fortran symbol on explicit request, which additionally accepts
+/// the plain g77 `name_` form that auto-detection never claims. Used only by
+/// [`demangle_as`].
+#[cfg(feature = "fortran")]
+fn try_demangle_fortran_explicit(ident: &str, opts: DemangleOptions) -> Option<String> {
+    fortran::demangle_explicit(ident, opts)
+}
+
+#[cfg(not(feature = "fortran"))]
+fn try_demangle_fortran_explicit(_ident: &str, _opts: DemangleOptions) -> Option<String> {
     None
 }
 
@@ -990,7 +1097,7 @@ impl Demangle for Name<'_> {
             return self.language();
         }
 
-        if is_maybe_objc(self.as_str()) {
+        if is_maybe_objc(self.as_str()) || is_maybe_objc_metadata(self.as_str()) {
             return Language::ObjC;
         }
 
@@ -1017,6 +1124,13 @@ impl Demangle for Name<'_> {
             return Language::Swift;
         }
 
+        // D detection runs a full demangling pass (like the GNU v2 and
+        // CodeWarrior checks above), so `_D88`-style near misses stay
+        // unknown. Without the `dlang` backend the attempt declines.
+        if try_demangle_dlang(self.as_str(), DemangleOptions::name_only()).is_some() {
+            return Language::D;
+        }
+
         Language::Unknown
     }
 
@@ -1033,9 +1147,16 @@ impl Demangle for Name<'_> {
             Language::Rust => try_demangle_rust(self.as_str(), opts),
             Language::Cpp => try_demangle_cpp(self.as_str(), opts),
             Language::Swift => try_demangle_swift(self.as_str(), opts),
-            // Unknown languages may still be Scala Native, which is only
-            // recognizable by attempting to demangle.
-            _ => try_demangle_scala_native(self.as_str(), opts),
+            Language::D => try_demangle_dlang(self.as_str(), opts),
+            // Unknown languages may still use one of the string-named
+            // schemes: Scala Native, Kotlin/Native, a Fortran module symbol,
+            // or Ada. Ada goes last, and must stay last: its `__`-separator
+            // heuristic is the loosest of the set, so the stricter schemes
+            // get first refusal. This order matches [`detect_language`].
+            _ => try_demangle_scala_native(self.as_str(), opts)
+                .or_else(|| try_demangle_kotlin_native(self.as_str(), opts))
+                .or_else(|| try_demangle_fortran(self.as_str(), opts))
+                .or_else(|| try_demangle_ada(self.as_str(), opts)),
         }
     }
 
@@ -1100,6 +1221,51 @@ pub fn demangle_one(sym: &str, opts: DemangleOptions) -> Cow<'_, str> {
     match Name::from(sym).demangle(opts) {
         Some(demangled) => Cow::Owned(demangled),
         None => Cow::Borrowed(sym),
+    }
+}
+
+/// Demangles `symbol` with the named language backend instead of
+/// auto-detection.
+///
+/// `language` is one of the short names accepted by [`detect_language`]
+/// (`"cpp"`, `"rust"`, `"swift"`, `"objc"`, `"objcpp"`, `"d"`, `"fortran"`,
+/// `"kotlin-native"`, `"ada"`, `"scala-native"`). This is the
+/// explicit-request entry point: unlike auto-detection it reaches the
+/// conservative corners of a scheme — for example Fortran's plain g77 form
+/// `name_`, which auto-detection never claims because it collides with any C
+/// symbol ending in `_`.
+///
+/// Returns `None` for an unknown language name, a symbol the named backend
+/// rejects, or a backend compiled out of this build.
+///
+/// # Examples
+///
+/// ```
+/// # #[cfg(feature = "fortran")] {
+/// use multi_demangle::{demangle_as, DemangleOptions};
+///
+/// // Auto-detection passes `init_` through as an ordinary C symbol...
+/// assert_eq!(multi_demangle::demangle("init_"), "init_");
+///
+/// // ...but the Fortran backend demangles it when asked explicitly.
+/// assert_eq!(
+///     demangle_as("fortran", "init_", DemangleOptions::complete()),
+///     Some("init".to_string())
+/// );
+/// # }
+/// ```
+pub fn demangle_as(language: &str, symbol: &str, opts: DemangleOptions) -> Option<String> {
+    match language {
+        "cpp" | "objcpp" => try_demangle_cpp(symbol, opts),
+        "rust" => try_demangle_rust(symbol, opts),
+        "swift" => try_demangle_swift(symbol, opts),
+        "objc" => crate::is_maybe_objc(symbol).then(|| demangle_objc(symbol, opts)),
+        "d" => try_demangle_dlang(symbol, opts),
+        "fortran" => try_demangle_fortran_explicit(symbol, opts),
+        "kotlin-native" => try_demangle_kotlin_native(symbol, opts),
+        "ada" => try_demangle_ada(symbol, opts),
+        "scala-native" => try_demangle_scala_native(symbol, opts),
+        _ => None,
     }
 }
 
@@ -1282,6 +1448,136 @@ mod test {
         assert_eq!(
             strip_hash_suffix("hello$\u{1000}0123456789abcdef0123456789abcde"),
             "hello$\u{1000}0123456789abcdef0123456789abcde"
+        );
+    }
+}
+
+/// Cross-backend corpus invariants (Plan 08, step 5).
+///
+/// Every committed corpus symbol — the real C++/Rust/Swift dumps and the
+/// toolchain-collected D/Ada/Fortran/Kotlin symbols — is offered to every
+/// backend, and no two may claim it. With heuristic dispatch in the
+/// unknown-language fallback chain, misclassification is the dominant
+/// failure mode: Ada's `__`-separator predicate is the loosest in the
+/// crate, and a false positive there silently steals another language's
+/// symbols.
+#[cfg(all(
+    test,
+    feature = "ada",
+    feature = "cpp",
+    feature = "dlang",
+    feature = "fortran",
+    feature = "kotlin-native",
+    feature = "rust",
+    feature = "scala-native",
+    feature = "swift"
+))]
+mod corpus_invariants {
+    use super::*;
+
+    /// Whether the backend `lang` claims `sym` through the same entry point
+    /// auto-detection would use (acceptance, not just the cheap prefix
+    /// predicate).
+    fn claims(lang: &str, sym: &str) -> bool {
+        match lang {
+            "cpp" => try_demangle_cpp(sym, DemangleOptions::name_only()).is_some(),
+            "rust" => try_demangle_rust(sym, DemangleOptions::name_only()).is_some(),
+            "swift" => is_maybe_swift(sym),
+            "d" => try_demangle_dlang(sym, DemangleOptions::name_only()).is_some(),
+            "scala-native" => {
+                try_demangle_scala_native(sym, DemangleOptions::name_only()).is_some()
+            }
+            "kotlin-native" => {
+                try_demangle_kotlin_native(sym, DemangleOptions::name_only()).is_some()
+            }
+            // Auto-detection never claims the plain g77 form, so the
+            // invariant uses the same module-symbol parse the dispatch
+            // chain does.
+            "fortran" => fortran::parse_module_symbol(sym).is_some(),
+            "ada" => try_demangle_ada(sym, DemangleOptions::name_only()).is_some(),
+            other => unreachable!("unknown backend {other}"),
+        }
+    }
+
+    /// The committed corpora. The D, Ada, Fortran, and Kotlin files are the
+    /// `contrib/` toolchain collections; the rest come from binaries on the
+    /// collection machine.
+    fn corpus(lang: &str) -> Vec<String> {
+        let file = match lang {
+            "d" => "dlang",
+            "kotlin-native" => "kotlin",
+            other => other,
+        };
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("tests/corpus")
+            .join(format!("{file}_symbols.txt"));
+        std::fs::read_to_string(&path)
+            .unwrap_or_else(|e| panic!("{} is readable: {e}", path.display()))
+            .lines()
+            .map(|l| l.trim().to_string())
+            .filter(|l| !l.is_empty())
+            .collect()
+    }
+
+    const LANGUAGES: [&str; 7] = [
+        "cpp",
+        "rust",
+        "swift",
+        "d",
+        "ada",
+        "fortran",
+        "kotlin-native",
+    ];
+
+    /// The one sanctioned overlap: legacy Rust mangling (`_ZN…17h<hash>E`)
+    /// is also a syntactically valid Itanium symbol, so both parsers accept
+    /// it. Dispatch is well-defined — [`detect_language`] resolves Rust
+    /// before C++ — so the ambiguity is inherent to the mangling shapes,
+    /// not a misclassification.
+    const KNOWN_OVERLAP: [&str; 2] = ["cpp", "rust"];
+
+    #[test]
+    fn no_two_backends_claim_one_symbol() {
+        let mut violations = Vec::new();
+        for lang in LANGUAGES {
+            for sym in corpus(lang) {
+                let claiming: Vec<&str> = LANGUAGES
+                    .iter()
+                    .copied()
+                    .filter(|l| claims(l, &sym))
+                    .collect();
+                if claiming.len() > 1 && claiming != KNOWN_OVERLAP {
+                    violations.push(format!("{lang}: {sym} claimed by {claiming:?}"));
+                }
+            }
+        }
+        assert!(
+            violations.is_empty(),
+            "mutual exclusion broken:\n{}",
+            violations.join("\n")
+        );
+    }
+
+    /// Negative testing, as called out by the plan: no Rust, C++, or Swift
+    /// symbol may be claimed by Ada or Fortran. Subsumed by the pairwise
+    /// invariant above, but asserted separately so a violation names the
+    /// dangerous predicate directly.
+    #[test]
+    fn ada_and_fortran_never_claim_other_language_symbols() {
+        let mut violations = Vec::new();
+        for lang in ["cpp", "rust", "swift"] {
+            for sym in corpus(lang) {
+                for claimant in ["ada", "fortran"] {
+                    if claims(claimant, &sym) {
+                        violations.push(format!("{claimant} claims {lang} symbol {sym}"));
+                    }
+                }
+            }
+        }
+        assert!(
+            violations.is_empty(),
+            "Ada/Fortran false positives:\n{}",
+            violations.join("\n")
         );
     }
 }

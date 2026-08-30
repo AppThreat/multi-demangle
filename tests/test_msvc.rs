@@ -35,3 +35,27 @@ fn test_msvc_demangle_full() {
 }
 
 // NOTE: msvc_demangler cannot demangle without qualifiers and argument lists yet.
+
+/// Regression test for the byte-escape underflow in msvc-demangler 0.11.0's
+/// encoded-string reader: a `$<high><low>` escape computed `byte - b'A'` on
+/// two unchecked bytes, panicking with overflow checks on (and silently
+/// wrapping into wrong output characters in release builds) when either byte
+/// sat below `A`. Found by the `demangle` fuzz target (Plan 05) with exactly
+/// this input; the vendored fix in `vendor/msvc-demangler/` validates both
+/// nibble letters and rejects the symbol. A dependency bump that
+/// reintroduces the unchecked subtraction fails here.
+#[test]
+fn fuzz_found_invalid_byte_escape_is_rejected_not_panicking() {
+    use multi_demangle::Demangle;
+    use symbolic_common::Name;
+
+    // libFuzzer artifact crash-52e69ba3cebf8ec03eb4e64f4fb1fb1598a36864:
+    // `?D` in the string body is a byte below `A` fed to the subtraction.
+    let symbol = "??1@_17@_?$??DDDFDV dDDDDD D$_wb'vb'v1J";
+    let name = Name::from(symbol);
+    // The malformed escape must reject consistently — no panic, and the same
+    // answer on every call (a wrap would vary with nothing).
+    let first = name.demangle(DemangleOptions::complete());
+    let second = name.demangle(DemangleOptions::complete());
+    assert_eq!(first, second);
+}

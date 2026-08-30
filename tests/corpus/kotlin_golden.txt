@@ -1,0 +1,30 @@
+# Golden tier — Kotlin/Native.
+#
+# No demangling oracle exists for Kotlin/Native, so the authority here is
+# the fixture: contrib/fixtures/kotlin/corpus.kt declares each construct,
+# kotlinc-native 2.0.21 emits the symbol in the first column, and the
+# rendering spells out the declaration per the rules documented in
+# src/kotlin_native.rs (`#` as `.`, `kotlin.` elision, dropped type-parameter
+# block, ` [static]`/` [trampoline]` declaration and thunk
+# markers rendered as trailing tags rather than name segments). These lines cover one construct
+# each; the remaining corpus is snapshot-tier.
+#
+# `<rejected>` pins the rejection of a malformed signature tail.
+#
+# Update by hand alongside the fixture; see tests/test_new_language_corpus.rs.
+kfun:com.example#main(kotlin.Array<kotlin.String>){}	com.example.main(Array<String>)
+kfun:com.example#describe(kotlin.Int;kotlin.String){}kotlin.String	com.example.describe(Int, String): String
+kfun:com.example#nullableArg(kotlin.String?){}kotlin.Int?	com.example.nullableArg(String?): Int?
+kfun:com.example#genericIdentity(0:0){0§<kotlin.Any?>}0:0	com.example.genericIdentity(0:0): 0:0
+kfun:com.example#mapOfLists(kotlin.collections.Map<kotlin.String,kotlin.collections.List<kotlin.Int>>){}kotlin.collections.Set<kotlin.collections.Map.Entry<kotlin.String,kotlin.collections.List<kotlin.Int>>>	com.example.mapOfLists(collections.Map<String,collections.List<Int>>): collections.Set<collections.Map.Entry<String,collections.List<Int>>>
+kfun:com.example#defaulted$default(kotlin.Int;kotlin.String?;kotlin.Int){}kotlin.String	com.example.defaulted$default(Int, String?, Int): String
+kfun:com.example.Counter#increment(kotlin.Int){}kotlin.Int	com.example.Counter.increment(Int): Int
+kfun:com.example.Counter#<get-value>(){}kotlin.Int	com.example.Counter.<get-value>(): Int
+kfun:com.example.Counter#<init>(){}	com.example.Counter.<init>()
+kfun:com.example.Counter.Companion#create(){}com.example.Counter	com.example.Counter.Companion.create(): com.example.Counter
+kfun:com.example.Color#$getEnumAt#static(kotlin.Int){}com.example.Color	com.example.Color.$getEnumAt(Int): com.example.Color [static]
+kfun:com.example.Color.$init_global#internal	com.example.Color.$init_global [internal]
+kfun:com.example.Rect#area(){}kotlin.Double-trampoline	com.example.Rect.area(): Double [trampoline]
+kfun:com.example.Point#component1(){}kotlin.Int	com.example.Point.component1(): Int
+kfun:com.example#shout__at__kotlin.String(){}kotlin.String	com.example.shout__at__kotlin.String(): String
+kfun:com.example#<get-computed>(){}kotlin.Int	com.example.<get-computed>(): Int

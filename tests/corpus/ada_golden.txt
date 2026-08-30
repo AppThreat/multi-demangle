@@ -1,0 +1,24 @@
+# Golden tier: renderings verified against GNU c++filt -s gnat.
+# Regenerate with contrib/scripts/update-corpus-expectations.sh;
+# a mismatch in tests/test_new_language_corpus.rs is a bug.
+_ada_main	main
+corpus___elabb	corpus'Elab_Body
+corpus__child__deep_proc	corpus.child.deep_proc
+corpus__child__nested_compute	corpus.child.nested_compute
+corpus__compute	corpus.compute
+corpus__compute__outer_block__inner.0	corpus.compute.outer_block.inner
+corpus__Oabs	corpus."abs"
+corpus__Oadd	corpus."+"
+corpus__Oconcat	corpus."&"
+corpus__Oeq	corpus."="
+corpus__Oexpon	corpus."**"
+corpus__Ole	corpus."<="
+corpus__Olt	corpus."<"
+corpus__Omultiply	corpus."*"
+corpus__Osubtract	corpus."-"
+corpus__overloaded	corpus.overloaded
+corpus__overloaded__2	corpus.overloaded
+corpus__overloaded__3	corpus.overloaded
+corpus__phase3	corpus.phase3
+corpus__simple	corpus.simple
+corpus__step_2	corpus.step_2

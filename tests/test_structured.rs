@@ -9,6 +9,12 @@
     feature = "swift",
     feature = "scala-native"
 ))]
+#![cfg(all(
+    feature = "dlang",
+    feature = "fortran",
+    feature = "ada",
+    feature = "kotlin-native"
+))]
 
 use multi_demangle::{Demangle, DemangleOptions, DemangledKind};
 use similar_asserts::assert_eq;
@@ -462,7 +468,91 @@ fn itanium_guard_variable_kind() {
     assert_eq!(guard.parameters, None);
 }
 
-// --- ObjC ---
+// --- D ---
+
+#[test]
+fn dlang_member_function_fields() {
+    let info = structured("_D6module4Test6methodMFiZi");
+    assert_eq!(info.language, symbolic_common::Language::D);
+    assert_eq!(info.namespace, ["module", "Test"]);
+    assert_eq!(info.name, "method");
+    assert_eq!(info.kind, DemangledKind::Method);
+    assert_eq!(info.parameters, Some(vec!["int".to_string()]));
+    assert_eq!(info.return_type, None);
+}
+
+#[test]
+fn dlang_variable_fields() {
+    let info = structured("_D6module7counteri");
+    assert_eq!(info.namespace, ["module"]);
+    assert_eq!(info.name, "counter");
+    assert_eq!(info.kind, DemangledKind::StaticVariable);
+    // The variable type renders in display but is not a return type.
+    assert_eq!(info.display, "int module.counter");
+    assert_eq!(info.return_type, None);
+}
+
+#[test]
+fn dlang_template_fields() {
+    let info = structured("_D6module13__T4tempTiTkZ4funcFZv");
+    assert_eq!(info.namespace, ["module", "temp!(int, uint)"]);
+    assert_eq!(info.name, "func");
+    assert!(info.is_generic);
+    // The template lives in the path, and its arguments are captured.
+    assert_eq!(
+        info.template_args,
+        Some(vec!["int".to_string(), "uint".to_string()])
+    );
+}
+
+#[test]
+fn dlang_magic_kinds() {
+    let info = structured("_D8demangle4test6__vtblZ");
+    assert_eq!(info.kind, DemangledKind::VirtualTable);
+    let info = structured("_D8demangle4test7__ClassZ");
+    assert_eq!(info.kind, DemangledKind::TypeInfo);
+    let info = structured("_D8demangle4test6__initZ");
+    assert_eq!(info.kind, DemangledKind::Function);
+}
+
+// --- Fortran ---
+
+#[test]
+fn fortran_module_fields() {
+    let info = structured("__my_module_MOD_my_proc");
+    assert_eq!(info.namespace, ["my_module"]);
+    assert_eq!(info.name, "my_proc");
+    assert_eq!(info.kind, DemangledKind::Function);
+    // The mangling carries no type information.
+    assert_eq!(info.parameters, None);
+    assert_eq!(info.return_type, None);
+}
+
+// --- Kotlin/Native ---
+
+#[test]
+fn kotlin_native_fields() {
+    let info = structured("_kfun:com.example.Foo.bar(kotlin.String;kotlin.Int)");
+    assert_eq!(info.namespace, ["com", "example", "Foo"]);
+    assert_eq!(info.name, "bar");
+    assert_eq!(info.kind, DemangledKind::Method);
+    assert_eq!(
+        info.parameters,
+        Some(vec!["String".to_string(), "Int".to_string()])
+    );
+}
+
+// --- Ada ---
+
+#[test]
+fn ada_fields() {
+    let info = structured("ada__exceptions__last_chance_handlerXn");
+    assert_eq!(info.namespace, ["ada", "exceptions"]);
+    assert_eq!(info.name, "last_chance_handler");
+    assert_eq!(info.kind, DemangledKind::Function);
+}
+
+// --- ObjC metadata ---
 
 #[test]
 fn objc_selectors() {
@@ -483,6 +573,30 @@ fn objc_selectors() {
         DemangledKind::ObjCMethod { class_method: true }
     );
     assert_eq!(class_method.name, "bar:");
+}
+
+// --- ObjC runtime metadata symbols ---
+
+#[test]
+fn objc_metadata_kinds() {
+    let class = structured("_OBJC_CLASS_$_MyViewController");
+    assert_eq!(class.language, symbolic_common::Language::ObjC);
+    assert_eq!(class.name, "MyViewController");
+    assert_eq!(class.kind, DemangledKind::ObjCClass);
+
+    let metaclass = structured("_OBJC_METACLASS_$_MyViewController");
+    assert_eq!(metaclass.kind, DemangledKind::ObjCMetaclass);
+
+    let ivar = structured("_OBJC_IVAR_$_MyObject._count");
+    assert_eq!(ivar.namespace, ["MyObject"]);
+    assert_eq!(ivar.name, "_count");
+    assert_eq!(ivar.kind, DemangledKind::ObjCIvar);
+
+    // Emitted selector references are compiler glue.
+    let selector = structured("l_OBJC_SELECTOR_REFERENCES_12");
+    assert_eq!(selector.kind, DemangledKind::Glue);
+    let selector = structured("OBJC_SELECTOR_REFERENCES_34");
+    assert_eq!(selector.kind, DemangledKind::Glue);
 }
 
 // --- Contracts shared with the string API ---

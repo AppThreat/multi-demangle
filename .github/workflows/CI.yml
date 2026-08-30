@@ -67,6 +67,54 @@ jobs:
           diff -u tests/fixtures/nm_hygiene_demangled.txt "$RUNNER_TEMP/nm_hygiene_actual.txt"
         shell: bash
 
+  new-language-differential:
+    # Plan 08: differential ratchet for the hand-written D and Ada backends.
+    # Builds the apt-only GNU toolchains image (layer-cached by input hash,
+    # ~2 min cold) and diffs this crate against GNU c++filt — libiberty's
+    # independent D/GNAT demanglers — over the committed fixture corpora.
+    # The job fails when the functional-gap count rises above the recorded
+    # baseline: a gap means we now reject a symbol the reference demangler
+    # accepts. Rendering differences are informative only and never fail the
+    # job. Kotlin/Native and Fortran have no oracle; they are covered by the
+    # corpus snapshot tests instead.
+    name: New-language differential
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4.3.0
+      - name: Build the GNU toolchains image
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
+        with:
+          context: contrib
+          file: contrib/docker/gnu-toolchains.Dockerfile
+          push: false
+          load: true
+          tags: multi-demangle/gnu-toolchains:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=min
+      - name: Build the CLI
+        run: cargo build --bin multi-demangle
+      - name: Diff the corpora against c++filt
+        run: |
+          contrib/collect-corpus.sh diff dlang | tee "$RUNNER_TEMP/dlang_diff.txt"
+          contrib/collect-corpus.sh diff ada | tee "$RUNNER_TEMP/ada_diff.txt"
+      - name: Ratchet on the functional-gap baseline
+        run: |
+          check() {
+            local file="$1" lang="$2" baseline="$3" gaps
+            gaps=$(awk '/we reject, c\+\+filt demangles/ {for (i = 1; i <= NF; i++) if ($i ~ /^[0-9]+$/) print $i}' "$file")
+            echo "$lang: $gaps functional gaps (baseline $baseline)"
+            if [ "$gaps" -gt "$baseline" ]; then
+              echo "::error::$lang: $gaps functional gaps exceed the committed baseline of $baseline. A fixture symbol the reference demangler accepts is now rejected — fix the backend, or bump the baseline here if the gap is deliberate."
+              exit 1
+            fi
+          }
+          check "$RUNNER_TEMP/dlang_diff.txt" dlang 0
+          check "$RUNNER_TEMP/ada_diff.txt" ada 1
+
   python-tests:
       name: Python Tests
       runs-on: ${{ matrix.os }}

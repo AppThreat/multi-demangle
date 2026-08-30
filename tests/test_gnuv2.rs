@@ -57,3 +57,46 @@ fn test_demangle_gnuv2_symbols() {
         assert_demangle_variants(symbol, full, no_return, name_only);
     }
 }
+
+/// Regression test for the unbounded argument-list expansion that
+/// gnuv2_demangle 0.4.0 suffered on crafted `N<count><index>` repeat
+/// arguments: the count went into the vec push verbatim, so it grew until the
+/// allocator gave up (libFuzzer intercepted a single 3 GiB reallocation), and
+/// its argument loop also had no zero-progress check. Found by the `detect`
+/// fuzz target (Plan 05) with exactly this input, reached through
+/// `detect_language`, which attempts a full GNU v2 pass on every symbol the
+/// C++ prefix predicates decline; the vendored fix in
+/// `vendor/gnuv2_demangle/` rejects the symbol instead. A dependency bump
+/// that reintroduces either behavior fails here.
+#[test]
+fn fuzz_found_unbounded_repeat_expansion_is_rejected_not_looping() {
+    use multi_demangle::{Demangle, DemangleOptions};
+    use symbolic_common::Name;
+
+    let symbol = "00000L<e0000000e00__2cZN1255555555555555_00]0eeeee0Nf`>_Z__0v0";
+    let name = Name::from(symbol);
+    assert_eq!(name.detect_language(), Language::Unknown);
+    assert_eq!(name.demangle(DemangleOptions::complete()), None);
+
+    // And a few near-misses around the same shape, so the guard is not
+    // pinned to one byte sequence.
+    for probe in [
+        "_ZN1255555555555555_00",
+        "__2cZN1255555555555555_00]0e",
+        "foo__ZNe00e0eee0Nf",
+    ] {
+        let _ = Name::from(probe).demangle(DemangleOptions::complete());
+    }
+}
+
+/// The array-length fixup overflowed on a declared length of
+/// `u64::MAX`; found by the swift_ffi fuzz target under ASan (Plan 05,
+/// artifact crash-f17ecdd534c3bfe1e6d4b30726db88ece630d800), reached through
+/// `detect_language`. The vendored fix rejects the overflow instead.
+#[test]
+fn fuzz_found_array_length_overflow_is_rejected() {
+    let symbol = "_SMP__FA0000000000000000000000000000000000018446744073709551615_FA0000000000000000000000000012_AFA";
+    let name = Name::from(symbol);
+    assert_eq!(name.detect_language(), Language::Unknown);
+    assert_eq!(name.demangle(DemangleOptions::complete()), None);
+}

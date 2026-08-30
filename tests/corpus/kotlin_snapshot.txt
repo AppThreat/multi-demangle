@@ -1,0 +1,138 @@
+# Snapshot tier: stable output, refreshed deliberately.
+# Regenerate with MULTI_DEMANGLE_UPDATE_SNAPSHOTS=1 cargo test --test test_new_language_corpus
+# and review the diff.
+kfun:com.example#defaulted(kotlin.Int;kotlin.String){}kotlin.String	com.example.defaulted(Int, String): String
+kfun:com.example.Color#<init>(kotlin.String;kotlin.Int){}	com.example.Color.<init>(String, Int)
+kfun:com.example.Counter#<get-$companion>#static(){}com.example.Counter.Companion	com.example.Counter.<get-$companion>(): com.example.Counter.Companion [static]
+kfun:com.example.Counter#reset(){}	com.example.Counter.reset()
+kfun:com.example.Counter.<set-value>#internal	com.example.Counter.<set-value> [internal]
+kfun:com.example.Point#<get-x>(){}kotlin.Int	com.example.Point.<get-x>(): Int
+kfun:com.example.Point#<get-y>(){}kotlin.Int	com.example.Point.<get-y>(): Int
+kfun:com.example.Point#<init>(kotlin.Int;kotlin.Int){}	com.example.Point.<init>(Int, Int)
+kfun:com.example.Point#component2(){}kotlin.Int	com.example.Point.component2(): Int
+kfun:com.example.Point#copy(kotlin.Int;kotlin.Int){}com.example.Point	com.example.Point.copy(Int, Int): com.example.Point
+kfun:com.example.Point#equals(kotlin.Any?){}kotlin.Boolean	com.example.Point.equals(Any?): Boolean
+kfun:com.example.Point#hashCode(){}kotlin.Int	com.example.Point.hashCode(): Int
+kfun:com.example.Point#toString(){}kotlin.String	com.example.Point.toString(): String
+kfun:com.example.Rect#<get-h>(){}kotlin.Double	com.example.Rect.<get-h>(): Double
+kfun:com.example.Rect#<get-w>(){}kotlin.Double	com.example.Rect.<get-w>(): Double
+kfun:com.example.Rect#<init>(kotlin.Double;kotlin.Double){}	com.example.Rect.<init>(Double, Double)
+kfun:com.example.Rect#area(){}kotlin.Double	com.example.Rect.area(): Double
+kfun:com.example.Registry#<get-$instance>#static(){}com.example.Registry	com.example.Registry.<get-$instance>(): com.example.Registry [static]
+kfun:com.example.Registry#register(kotlin.String){}	com.example.Registry.register(String)
+kfun:com.example.Shape#area(){}kotlin.Double-trampoline	com.example.Shape.area(): Double [trampoline]
+kfun:com.example.Square#<init>(kotlin.Double){}	com.example.Square.<init>(Double)
+kfun:kotlin#<Byte-box>(kotlin.Byte){}kotlin.Any	kotlin.<Byte-box>(Byte): Any
+kfun:kotlin#<Int-box>(kotlin.Int){}kotlin.Any	kotlin.<Int-box>(Int): Any
+kfun:kotlin#<UInt-box>(kotlin.UInt){}kotlin.Any	kotlin.<UInt-box>(UInt): Any
+kfun:kotlin#takeHighestOneBit__at__kotlin.Int(){}kotlin.Int	kotlin.takeHighestOneBit__at__kotlin.Int(): Int
+kfun:kotlin.Any#hashCode(){}kotlin.Int	kotlin.Any.hashCode(): Int
+kfun:kotlin.ArrayIndexOutOfBoundsException#<init>(){}	kotlin.ArrayIndexOutOfBoundsException.<init>()
+kfun:kotlin.Byte#$<bridge-NUN>hashCode(){}kotlin.Int(){}kotlin.Int	kotlin.Byte.$<bridge-NUN>hashCode(): Int(){}kotlin.Int
+kfun:kotlin.Byte#$<bridge-NUN>toString(){}kotlin.String(){}kotlin.String	kotlin.Byte.$<bridge-NUN>toString(): String(){}kotlin.String
+kfun:kotlin.Char#$<bridge-NUNN>equals(kotlin.Any?){}kotlin.Boolean(kotlin.Any?){}kotlin.Boolean	kotlin.Char.$<bridge-NUNN>equals(Any?): Boolean(Any?){}kotlin.Boolean
+kfun:kotlin.CharSequence#get(kotlin.Int){}kotlin.Char-trampoline	kotlin.CharSequence.get(Int): Char [trampoline]
+kfun:kotlin.Double#$<bridge-NUN>toFloat(){}kotlin.Float(){}kotlin.Float	kotlin.Double.$<bridge-NUN>toFloat(): Float(){}kotlin.Float
+kfun:kotlin.Double#equals(kotlin.Any?){}kotlin.Boolean	kotlin.Double.equals(Any?): Boolean
+kfun:kotlin.Enum#<get-ordinal>(){}kotlin.Int	kotlin.Enum.<get-ordinal>(): Int
+kfun:kotlin.Error#<init>(kotlin.String?;kotlin.Throwable?){}	kotlin.Error.<init>(String?, Throwable?)
+kfun:kotlin.Float#$<bridge-NUN>toFloat(){}kotlin.Float(){}kotlin.Float	kotlin.Float.$<bridge-NUN>toFloat(): Float(){}kotlin.Float
+kfun:kotlin.Float#equals(kotlin.Any?){}kotlin.Boolean	kotlin.Float.equals(Any?): Boolean
+kfun:kotlin.Function1#invoke(1:0){}1:1-trampoline	kotlin.Function1.invoke(1:0): 1:1 [trampoline]
+kfun:kotlin.Int#$<bridge-NUN>toChar(){}kotlin.Char(){}kotlin.Char	kotlin.Int.$<bridge-NUN>toChar(): Char(){}kotlin.Char
+kfun:kotlin.Int#$<bridge-NUNU>compareTo(kotlin.Int){}kotlin.Int(kotlin.Any?){}kotlin.Int	kotlin.Int.$<bridge-NUNU>compareTo(Int): Int(Any?){}kotlin.Int
+kfun:kotlin.Long#$<bridge-NUN>hashCode(){}kotlin.Int(){}kotlin.Int	kotlin.Long.$<bridge-NUN>hashCode(): Int(){}kotlin.Int
+kfun:kotlin.Long#$<bridge-NUN>toString(){}kotlin.String(){}kotlin.String	kotlin.Long.$<bridge-NUN>toString(): String(){}kotlin.String
+kfun:kotlin.NoSuchElementException#<init>(){}	kotlin.NoSuchElementException.<init>()
+kfun:kotlin.Result.Failure#<get-exception>(){}kotlin.Throwable	kotlin.Result.Failure.<get-exception>(): Throwable
+kfun:kotlin.Short#$<bridge-NUN>toByte(){}kotlin.Byte(){}kotlin.Byte	kotlin.Short.$<bridge-NUN>toByte(): Byte(){}kotlin.Byte
+kfun:kotlin.Short#$<bridge-NUNN>equals(kotlin.Any?){}kotlin.Boolean(kotlin.Any?){}kotlin.Boolean	kotlin.Short.$<bridge-NUNN>equals(Any?): Boolean(Any?){}kotlin.Boolean
+kfun:kotlin.Throwable#<get-cause>(){}kotlin.Throwable?	kotlin.Throwable.<get-cause>(): Throwable?
+kfun:kotlin.Throwable#printStackTrace(){}	kotlin.Throwable.printStackTrace()
+kfun:kotlin.Throwable.ExceptionTraceBuilder.<get-top>#internal	kotlin.Throwable.ExceptionTraceBuilder.<get-top> [internal]
+kfun:kotlin.Throwable.ExceptionTraceBuilder.print#internal	kotlin.Throwable.ExceptionTraceBuilder.print [internal]
+kfun:kotlin.UByte#hashCode(){}kotlin.Int	kotlin.UByte.hashCode(): Int
+kfun:kotlin.UInt#compareTo(kotlin.UInt){}kotlin.Int	kotlin.UInt.compareTo(UInt): Int
+kfun:kotlin.ULong#<get-data>(){}kotlin.Long	kotlin.ULong.<get-data>(): Long
+kfun:kotlin.UShort#$<bridge-NUNU>compareTo(kotlin.UShort){}kotlin.Int(kotlin.Any?){}kotlin.Int	kotlin.UShort.$<bridge-NUNU>compareTo(UShort): Int(Any?){}kotlin.Int
+kfun:kotlin.collections#arrayOfNulls(kotlin.Array<0:0>;kotlin.Int){0§<kotlin.Any?>}kotlin.Array<0:0>	kotlin.collections.arrayOfNulls(Array<0:0>, Int): Array<0:0>
+kfun:kotlin.collections#copyInto__at__kotlin.CharArray(kotlin.CharArray;kotlin.Int;kotlin.Int;kotlin.Int){}kotlin.CharArray	kotlin.collections.copyInto__at__kotlin.CharArray(CharArray, Int, Int, Int): CharArray
+kfun:kotlin.collections#copyOf__at__kotlin.Array<0:0>(){0§<kotlin.Any?>}kotlin.Array<0:0>	kotlin.collections.copyOf__at__kotlin.Array<0:0>(): Array<0:0>
+kfun:kotlin.collections#joinToString__at__kotlin.collections.Iterable<0:0>(kotlin.CharSequence;kotlin.CharSequence;kotlin.CharSequence;kotlin.Int;kotlin.CharSequence;kotlin.Function1<0:0,kotlin.CharSequence>?){0§<kotlin.Any?>}kotlin.String	kotlin.collections.joinToString__at__kotlin.collections.Iterable<0:0>(CharSequence, CharSequence, CharSequence, Int, CharSequence, Function1<0:0,CharSequence>?): String
+kfun:kotlin.collections#terminateCollectionToArray(kotlin.Int;kotlin.Array<0:0>){0§<kotlin.Any?>}kotlin.Array<0:0>	kotlin.collections.terminateCollectionToArray(Int, Array<0:0>): Array<0:0>
+kfun:kotlin.collections.AbstractCollection#toArray(){}kotlin.Array<kotlin.Any?>	kotlin.collections.AbstractCollection.toArray(): Array<Any?>
+kfun:kotlin.collections.AbstractList#<init>(){}	kotlin.collections.AbstractList.<init>()
+kfun:kotlin.collections.AbstractList#listIterator(kotlin.Int){}kotlin.collections.ListIterator<1:0>	kotlin.collections.AbstractList.listIterator(Int): collections.ListIterator<1:0>
+kfun:kotlin.collections.AbstractList.Companion#orderedHashCode(kotlin.collections.Collection<*>){}kotlin.Int	kotlin.collections.AbstractList.Companion.orderedHashCode(collections.Collection<*>): Int
+kfun:kotlin.collections.AbstractList.ListIteratorImpl.hasPrevious#internal	kotlin.collections.AbstractList.ListIteratorImpl.hasPrevious [internal]
+kfun:kotlin.collections.AbstractList.SubList.<get-size>#internal	kotlin.collections.AbstractList.SubList.<get-size> [internal]
+kfun:kotlin.collections.AbstractMutableCollection#retainAll(kotlin.collections.Collection<1:0>){}kotlin.Boolean	kotlin.collections.AbstractMutableCollection.retainAll(collections.Collection<1:0>): Boolean
+kfun:kotlin.collections.AbstractMutableCollection.retainAll$lambda$1#internal	kotlin.collections.AbstractMutableCollection.retainAll$lambda$1 [internal]
+kfun:kotlin.collections.Collection#contains(1:0){}kotlin.Boolean-trampoline	kotlin.collections.Collection.contains(1:0): Boolean [trampoline]
+kfun:kotlin.collections.EmptyIterator#hasPrevious(){}kotlin.Boolean	kotlin.collections.EmptyIterator.hasPrevious(): Boolean
+kfun:kotlin.collections.EmptyList#contains(kotlin.Nothing){}kotlin.Boolean	kotlin.collections.EmptyList.contains(Nothing): Boolean
+kfun:kotlin.collections.EmptyList#lastIndexOf(kotlin.Nothing){}kotlin.Int	kotlin.collections.EmptyList.lastIndexOf(Nothing): Int
+kfun:kotlin.collections.EmptyMap.<get-values>#internal	kotlin.collections.EmptyMap.<get-values> [internal]
+kfun:kotlin.collections.EmptySet#<get-$instance>#static(){}kotlin.collections.EmptySet	kotlin.collections.EmptySet.<get-$instance>(): collections.EmptySet [static]
+kfun:kotlin.collections.EmptySet#toString(){}kotlin.String	kotlin.collections.EmptySet.toString(): String
+kfun:kotlin.collections.HashMap#addKey(1:0){}kotlin.Int	kotlin.collections.HashMap.addKey(1:0): Int
+kfun:kotlin.collections.HashMap#equals(kotlin.Any?){}kotlin.Boolean	kotlin.collections.HashMap.equals(Any?): Boolean
+kfun:kotlin.collections.HashMap#putAll(kotlin.collections.Map<out|1:0,1:1>){}	kotlin.collections.HashMap.putAll(collections.Map<out|1:0,1:1>)
+kfun:kotlin.collections.HashMap.<get-capacity>#internal	kotlin.collections.HashMap.<get-capacity> [internal]
+kfun:kotlin.collections.HashMap.<get-length>#internal	kotlin.collections.HashMap.<get-length> [internal]
+kfun:kotlin.collections.HashMap.<set-entriesView>#internal	kotlin.collections.HashMap.<set-entriesView> [internal]
+kfun:kotlin.collections.HashMap.<set-modCount>#internal	kotlin.collections.HashMap.<set-modCount> [internal]
+kfun:kotlin.collections.HashMap.EmptyHolder#<init>(){}	kotlin.collections.HashMap.EmptyHolder.<init>()
+kfun:kotlin.collections.HashMap.EntryRef#<get-value>(){}1:1	kotlin.collections.HashMap.EntryRef.<get-value>(): 1:1
+kfun:kotlin.collections.HashMap.Itr#<get-index>(){}kotlin.Int	kotlin.collections.HashMap.Itr.<get-index>(): Int
+kfun:kotlin.collections.HashMap.Itr#initNext(){}	kotlin.collections.HashMap.Itr.initNext()
+kfun:kotlin.collections.HashMap.allocateValuesArray#internal	kotlin.collections.HashMap.allocateValuesArray [internal]
+kfun:kotlin.collections.HashMap.putAllEntries#internal	kotlin.collections.HashMap.putAllEntries [internal]
+kfun:kotlin.collections.HashMapEntrySet#<init>(kotlin.collections.HashMap<1:0,1:1>){}	kotlin.collections.HashMapEntrySet.<init>(collections.HashMap<1:0,1:1>)
+kfun:kotlin.collections.HashMapEntrySetBase#clear(){}	kotlin.collections.HashMapEntrySetBase.clear()
+kfun:kotlin.collections.HashMapEntrySetBase#retainAll(kotlin.collections.Collection<1:2>){}kotlin.Boolean	kotlin.collections.HashMapEntrySetBase.retainAll(collections.Collection<1:2>): Boolean
+kfun:kotlin.collections.HashMapKeys#isEmpty(){}kotlin.Boolean	kotlin.collections.HashMapKeys.isEmpty(): Boolean
+kfun:kotlin.collections.HashMapValues#<init>(kotlin.collections.HashMap<*,1:0>){}	kotlin.collections.HashMapValues.<init>(collections.HashMap<*,1:0>)
+kfun:kotlin.collections.HashMapValues#removeAll(kotlin.collections.Collection<1:0>){}kotlin.Boolean	kotlin.collections.HashMapValues.removeAll(collections.Collection<1:0>): Boolean
+kfun:kotlin.collections.HashSet#contains(1:0){}kotlin.Boolean	kotlin.collections.HashSet.contains(1:0): Boolean
+kfun:kotlin.collections.HashSet.<get-backing>#internal	kotlin.collections.HashSet.<get-backing> [internal]
+kfun:kotlin.collections.Iterator#next(){}1:0-trampoline	kotlin.collections.Iterator.next(): 1:0 [trampoline]
+kfun:kotlin.collections.Map#<get-entries>(){}kotlin.collections.Set<kotlin.collections.Map.Entry<1:0,1:1>>-trampoline	kotlin.collections.Map.<get-entries>(): collections.Set<collections.Map.Entry<1:0,1:1>> [trampoline]
+kfun:kotlin.collections.MutableIterator#remove(){}-trampoline	kotlin.collections.MutableIterator.remove() [trampoline]
+kfun:kotlin.collections.object-1.contains#internal	kotlin.collections.object-1.contains [internal]
+kfun:kotlin.concurrent.AtomicInt#decrementAndGet(){}kotlin.Int	kotlin.concurrent.AtomicInt.decrementAndGet(): Int
+kfun:kotlin.concurrent.idString#internal	kotlin.concurrent.idString [internal]
+kfun:kotlin.coroutines.native.internal.CompletedContinuation#<get-context>(){}kotlin.coroutines.CoroutineContext	kotlin.coroutines.native.internal.CompletedContinuation.<get-context>(): coroutines.CoroutineContext
+kfun:kotlin.enums.EnumEntriesList.get#internal	kotlin.enums.EnumEntriesList.get [internal]
+kfun:kotlin.native.concurrent#freeze__at__0:0(){0§<kotlin.Any?>}0:0	kotlin.native.concurrent.freeze__at__0:0(): 0:0
+kfun:kotlin.native.concurrent.Lock.<get-locker_>#internal	kotlin.native.concurrent.Lock.<get-locker_> [internal]
+kfun:kotlin.native.concurrent.SynchronizedLazyImpl.<get-valueRef>#internal	kotlin.native.concurrent.SynchronizedLazyImpl.<get-valueRef> [internal]
+kfun:kotlin.native.internal.FileFailedToInitializeException#<init>(kotlin.String?;kotlin.Throwable?){}	kotlin.native.internal.FileFailedToInitializeException.<init>(String?, Throwable?)
+kfun:kotlin.native.internal.KClassImpl#toString(){}kotlin.String	kotlin.native.internal.KClassImpl.toString(): String
+kfun:kotlin.native.internal.KFunctionImpl#<get-description>(){}kotlin.native.internal.KFunctionDescription	kotlin.native.internal.KFunctionImpl.<get-description>(): native.internal.KFunctionDescription
+kfun:kotlin.native.internal.KFunctionImpl#equals(kotlin.Any?){}kotlin.Boolean	kotlin.native.internal.KFunctionImpl.equals(Any?): Boolean
+kfun:kotlin.native.internal.KProperty1Impl#toString(){}kotlin.String	kotlin.native.internal.KProperty1Impl.toString(): String
+kfun:kotlin.native.internal.KTypeImpl#equals(kotlin.Any?){}kotlin.Boolean	kotlin.native.internal.KTypeImpl.equals(Any?): Boolean
+kfun:kotlin.native.internal.KTypeParameterImpl#equals(kotlin.Any?){}kotlin.Boolean	kotlin.native.internal.KTypeParameterImpl.equals(Any?): Boolean
+kfun:kotlin.native.internal.KTypeProjectionList#get(kotlin.Int){}kotlin.reflect.KTypeProjection	kotlin.native.internal.KTypeProjectionList.get(Int): reflect.KTypeProjection
+kfun:kotlin.native.internal.NativePtrArray#<get-size>(){}kotlin.Int	kotlin.native.internal.NativePtrArray.<get-size>(): Int
+kfun:kotlin.native.internal.NumberConverter.<set-firstK>#internal	kotlin.native.internal.NumberConverter.<set-firstK> [internal]
+kfun:kotlin.native.internal.NumberConverter.Companion.<get-invLogOfTenBaseTwo>#internal	kotlin.native.internal.NumberConverter.Companion.<get-invLogOfTenBaseTwo> [internal]
+kfun:kotlin.native.internal.UnhandledExceptionHookHolder#<get-hook>(){}kotlin.concurrent.AtomicReference<kotlin.Function1<kotlin.Throwable,kotlin.Unit>?>	kotlin.native.internal.UnhandledExceptionHookHolder.<get-hook>(): concurrent.AtomicReference<Function1<Throwable,Unit>?>
+kfun:kotlin.ranges.IntProgression#<get-last>(){}kotlin.Int	kotlin.ranges.IntProgression.<get-last>(): Int
+kfun:kotlin.ranges.IntProgression#toString(){}kotlin.String	kotlin.ranges.IntProgression.toString(): String
+kfun:kotlin.ranges.IntProgressionIterator.<set-hasNext>#internal	kotlin.ranges.IntProgressionIterator.<set-hasNext> [internal]
+kfun:kotlin.ranges.IntRange#<get-start>(){}kotlin.Int	kotlin.ranges.IntRange.<get-start>(): Int
+kfun:kotlin.ranges.IntRange.Companion#<init>(){}	kotlin.ranges.IntRange.Companion.<init>()
+kfun:kotlin.reflect.KTypeProjection#<get-variance>(){}kotlin.reflect.KVariance?	kotlin.reflect.KTypeProjection.<get-variance>(): reflect.KVariance?
+kfun:kotlin.reflect.KTypeProjection.Companion#<init>(){}	kotlin.reflect.KTypeProjection.Companion.<init>()
+kfun:kotlin.text#charCount__at__kotlin.Int(){}kotlin.Int	kotlin.text.charCount__at__kotlin.Int(): Int
+kfun:kotlin.text#insertString(kotlin.CharArray;kotlin.Int;kotlin.String){}kotlin.Int	kotlin.text.insertString(CharArray, Int, String): Int
+kfun:kotlin.text#substringAfterLast$default__at__kotlin.String(kotlin.Char;kotlin.String?;kotlin.Int){}kotlin.String	kotlin.text.substringAfterLast$default__at__kotlin.String(Char, String?, Int): String
+kfun:kotlin.text#uppercase__at__kotlin.String(){}kotlin.String	kotlin.text.uppercase__at__kotlin.String(): String
+kfun:kotlin.text.<get-rangeLength>#internal.14	kotlin.text.<get-rangeLength> [internal.14]
+kfun:kotlin.text.StringBuilder#<get-length>(){}kotlin.Int	kotlin.text.StringBuilder.<get-length>(): Int
+kfun:kotlin.text.StringBuilder#append(kotlin.String?){}kotlin.text.StringBuilder	kotlin.text.StringBuilder.append(String?): text.StringBuilder
+kfun:kotlin.text.StringBuilder.<get-_length>#internal	kotlin.text.StringBuilder.<get-_length> [internal]
+kfun:kotlinx.cinterop.NativePlacement#alloc(kotlin.Int;kotlin.Int){}kotlinx.cinterop.NativePointed	kotlinx.cinterop.NativePlacement.alloc(Int, Int): kotlinx.cinterop.NativePointed
+kfun:kotlinx.cinterop.nativeMemUtils#freeRaw(kotlin.native.internal.NativePtr){}	kotlinx.cinterop.nativeMemUtils.freeRaw(native.internal.NativePtr)

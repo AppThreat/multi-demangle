@@ -13,7 +13,11 @@ Currently supported languages are:
 | Rust        | Both `legacy` and `v0` schemes                             | `rust`          |
 | Scala Native| Via the unknown-language fallback (symbols prefixed `_SM`) | `scala-native`  |
 | Swift       | Up to Swift 6.3.3, using a vendored Swift demangler        | `swift`         |
-| ObjC        | Symbol detection only (selectors are already readable)     | always on       |
+| D           | D ABI mangling (`_D…`), incl. function types and templates | `dlang`         |
+| Fortran     | gfortran `mod_MOD_proc` and Intel `mod_mp_proc_`; the plain g77 `name_` form only via explicit request (see below) | `fortran` |
+| Kotlin/Native| `_kfun:` symbols with parameter types                     | `kotlin-native` |
+| Ada (GNAT)  | `pkg__sub` encoding with escapes, operators, and markers   | `ada`           |
+| ObjC        | Selectors plus runtime metadata symbols (`_OBJC_CLASS_$_…`, `_OBJC_IVAR_$_…`, selector references) | always on |
 
 All of the above features are enabled by default. Disabling them trims the
 corresponding demangler (and, for `swift`, the vendored C++ sources) from the build.
@@ -127,6 +131,73 @@ One stated Itanium limitation: thunk symbols (`_ZTh`/`_ZTv`) classify with
 the right kind, but their target identity is not extracted — the leaf name
 stays the full brace rendering (`{virtual override thunk(...)}`) since the
 demangled form is descriptive and no Itanium AST is available to walk.
+
+### New-language backends (D, Fortran, Kotlin/Native, Ada)
+
+The D backend is a port of LLVM's D demangler extended with the full type
+grammar from the [D ABI specification](https://dlang.org/spec/abi.html) —
+function types, member functions, compound types, type modifiers, template
+instances, and back references. It is the only D demangler implemented in
+Rust. Function symbols render as `module.func(params)` without the return
+type (matching the reference demanglers), variables as `type module.var`, and
+template instances as `name!(args)`:
+
+```rust
+use symbolic_common::{Language, Name};
+use multi_demangle::{Demangle, DemangleOptions};
+
+assert_eq!(Name::from("_Dmain").detect_language(), Language::D);
+assert_eq!(
+    Name::from("_D6module4funcFZv").try_demangle(DemangleOptions::complete()),
+    "module.func()"
+);
+assert_eq!(
+    Name::from("_D6module4Test6methodMFiZi").try_demangle(DemangleOptions::complete()),
+    "module.Test.method(int)"
+);
+```
+
+Fortran module symbols demangle to `module::proc` for both gfortran
+(`__mod_MOD_proc`, with or without platform underscores) and Intel
+(`mod_mp_proc_`) conventions. The plain g77 form (`init_`, `my_sub__`) is
+*explicit-only*: any C symbol can end in `_`, so auto-detection never claims
+it. Use `demangle_as("fortran", …)` (Rust) or `--language fortran` (CLI) to
+demangle that form.
+
+```rust
+use multi_demangle::{demangle_as, Demangle, DemangleOptions};
+
+// Auto-detection leaves `init_` alone (it could be a C symbol)...
+assert_eq!(multi_demangle::demangle("init_"), "init_");
+// ...but the explicit entry point demangles it.
+assert_eq!(
+    demangle_as("fortran", "init_", DemangleOptions::complete()),
+    Some("init".to_string())
+);
+```
+
+Kotlin/Native symbols still carry the readable `kfun:` prefix (verified
+against the 2.0.20x compilers; see `contrib/fixtures/kotlin/`), in the
+modern spelling `kfun:<pkg>#<member>(<params>){<bounds>}<ret>`. They render
+with their parameter and return types and `kotlin.` prefix elision:
+`kfun:com.example.Counter#increment(kotlin.Int){}kotlin.Int` becomes
+`com.example.Counter.increment(Int): Int`. Compiler markers (`#static`,
+`#internal`) render as trailing name segments, and `-trampoline` thunks keep
+a ` [trampoline]` marker so they do not alias the function they dispatch to.
+
+Ada (GNAT) symbols decode the `pkg__sub` encoding — `_ada_` prefixes, `__N`
+body suffixes, elaboration procedures (`corpus___elabb` →
+`corpus'Elab_Body`), compiler-generated task companions (`TB` task body,
+`IP` initialization procedure, `E`/`Z` variables), `U`/`W` character
+escapes, anonymous blocks, and operator names (`module__Oadd` →
+`module."+"`).
+
+ObjC support now also recognizes runtime metadata symbols —
+`_OBJC_CLASS_$_Foo`, `_OBJC_METACLASS_$_Foo`, `_OBJC_IVAR_$_Foo.bar`, and
+emitted selector references (`l_OBJC_SELECTOR_REFERENCES_…`) — passing the
+symbols through unchanged but classifying them with typed kinds
+(`objc_class`, `objc_metaclass`, `objc_ivar`, glue) in the structured API.
+These dominate non-Swift Mach-O symbol tables.
 
 ### Symbol hygiene
 
@@ -354,7 +425,7 @@ Options:
 | ---- | ------ |
 | `-n, --name-only` | names only, no parameters or return types |
 | `--no-parameters` / `--no-return-type` | individual output toggles |
-| `-l, --language <LANG>` | force a backend instead of auto-detecting (`cpp`, `rust`, `swift`, `objc`, `objcpp`, `scala-native`) |
+| `-l, --language <LANG>` | force a backend instead of auto-detecting (`cpp`, `rust`, `swift`, `objc`, `objcpp`, `d`, `fortran`, `kotlin-native`, `ada`, `scala-native`); forcing `fortran` also enables the plain g77 `name_` form |
 | `--normalize` | apply the symbol hygiene passes (`__imp_`, `@plt`, ELF versions, Rust hash suffixes and `$`-escapes, `.llvm.` clone suffixes, pseudo-symbols) to symbols that cannot be demangled, then demangle the cleaned symbol when it succeeds |
 | `-s, --structured` | print one JSON record per symbol with its status, language, linker decorations, and the structured fields (name, namespace, kind, parameters, return type, generics, hash) |
 | `--list-languages` | print the supported languages and the backends enabled in this build |

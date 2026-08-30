@@ -31,9 +31,17 @@ fn test_looks_mangled() {
         "_$s8mangling12GenericUnionO3FooyACyxGSicAEmlF"
     ));
     assert!(looks_mangled("_T08mangling3barSiyKF"));
-    // ObjC selectors and Scala Native.
+    // ObjC selectors, metadata symbols, and Scala Native.
     assert!(looks_mangled("-[Foo bar:blub:]"));
+    assert!(looks_mangled("_OBJC_CLASS_$_Foo"));
+    assert!(looks_mangled("l_OBJC_SELECTOR_REFERENCES_12"));
     assert!(looks_mangled("_SM17java.lang.IntegerD7compareiiiEo"));
+    // D, Kotlin/Native, Ada, and Fortran module symbols.
+    assert!(looks_mangled("_D6module4funcFZv"));
+    assert!(looks_mangled("_kfun:com.example.Foo.bar(kotlin.String)"));
+    assert!(looks_mangled("ada__exceptions__raiseXn"));
+    assert!(looks_mangled("__my_module_MOD_my_proc"));
+    assert!(looks_mangled("my_module_mp_my_proc_"));
     // Partial legacy Rust escapes (the upstream consumer gates on `$LT$`).
     assert!(looks_mangled("impl$LT$T$GT$display"));
 
@@ -48,9 +56,11 @@ fn test_looks_mangled() {
     assert!(!looks_mangled("hello"));
     assert!(!looks_mangled("libc.so.6"));
     assert!(!looks_mangled("GCC_except_table0"));
-    // Known limitation: GNU v2 and CodeWarrior have no stable prefix, so the
-    // cheap check cannot see them.
-    assert!(!looks_mangled("do_thing__C6StupidRC6StupidT1"));
+    // GNU v2 and CodeWarrior still have no stable prefix of their own, but
+    // names carrying `__` separators now trip the Ada heuristic (an
+    // intentional over-approximation: looks-mangled makes no correctness
+    // promise).
+    assert!(looks_mangled("do_thing__C6StupidRC6StupidT1"));
 }
 
 #[test]
@@ -66,6 +76,21 @@ fn test_detect_language() {
         detect_language("_SM17java.lang.IntegerD7compareiiiEo"),
         Some("scala-native")
     );
+    // The same holds for D, Kotlin/Native, Ada, and Fortran.
+    assert_eq!(detect_language("_D6module4funcFZv"), Some("d"));
+    assert_eq!(detect_language("_Dmain"), Some("d"));
+    assert_eq!(
+        detect_language("_kfun:com.example.Foo.bar(kotlin.String)"),
+        Some("kotlin-native")
+    );
+    assert_eq!(
+        detect_language("ada__exceptions__last_chance_handlerXn"),
+        Some("ada")
+    );
+    assert_eq!(detect_language("__my_module_MOD_my_proc"), Some("fortran"));
+    assert_eq!(detect_language("my_module_mp_my_proc_"), Some("fortran"));
+    // The plain g77 form is not detected (it collides with C symbols).
+    assert_eq!(detect_language("init_"), None);
     assert_eq!(detect_language("libc.so.6"), None);
     assert_eq!(detect_language("hello"), None);
 }
@@ -304,6 +329,36 @@ fn test_normalize_idempotent() {
         "main.init@v2",
         "?h@@YAXH@Z",
         "hello",
+        // Layered decorations: the trailing-decoration strip is a fixed-point
+        // loop, so a stack must fully clear in one application instead of
+        // peeling one more layer per call.
+        "foo@plt@GLIBC_2.2.5",
+        "foo@GLIBC_2.2.5@plt",
+        "j_foo@plt@GLIBC_2.2.5",
+        "__imp___imp_foo",
+        "foo::h0123456789abcdef::habcdef0123456789",
+        "foo.llvm.1.llvm.2",
+        "foo@plt.llvm.123",
+        // Fuzz-found non-idempotence (normalize fuzz target, artifact
+        // crash-1b00318bced3f5669f874590f44644c5fdbe220b): the escape-decode
+        // gate saw the raw string, where a leading `j_` thunk prefix hides
+        // the `__ZN` rust prefix — the first application declined to decode
+        // `..`, the strips exposed `__ZN…`, and the second application then
+        // decoded. The gate now also evaluates the prefix-stripped view.
+        "j___ZN16t..h(s.oc..st",
+        // Pseudo-symbol predicates must see the prefix-stripped view:
+        // `j_GCC_except_table…` mapped only on the second application when
+        // the predicate ran on the raw string, because the `j_` thunk strip
+        // exposed the shape after the mapping check had passed it (normalize
+        // fuzz target, artifact crash-2dba940d0f836e927cb0f428dfb3c8b6310e28cc).
+        "j_GCC_except_tableu2rde_$LT$rdj_j_j\u{b}\u{b}\u{b}j",
+        "__imp_GCC_except_table5",
+        // Fuzz-found non-idempotence (normalize fuzz target, artifact
+        // crash-d4f88a396b0c360f58c5ee7c71064fb11051ecae): the version pass
+        // stripped the tail after the last `@` per application, so each
+        // `normalize` call peeled another `@`-layer off this input
+        // (`_$rse@…@…` → `_$rse@…` → `_$rse`).
+        "_$rse@6parse_uncounted_repe5__tttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttt@tttttttttttttRawaB0C_tFZ",
     ];
     for passes in [Normalizer::display(), Normalizer::matching()] {
         for symbol in samples {
@@ -312,6 +367,21 @@ fn test_normalize_idempotent() {
             assert_eq!(once, twice, "normalize is not idempotent for {symbol}");
         }
     }
+}
+
+/// A version strip must reach the same result as stripping each `@`-layer
+/// separately, in one application. This is the behavior the fuzz-found input
+/// above was truncating away.
+#[test]
+fn test_normalize_strips_layered_decorations_in_one_pass() {
+    let matching = Normalizer::matching();
+    assert_eq!(matching.normalize("foo@plt@GLIBC_2.2.5"), "foo");
+    assert_eq!(matching.normalize("foo@GLIBC_2.2.5@plt"), "foo");
+    assert_eq!(matching.normalize("j_foo@plt@GLIBC_2.2.5"), "foo");
+    assert_eq!(matching.normalize("__imp___imp_foo"), "foo");
+    // Plain decorations keep their single-application behavior.
+    assert_eq!(matching.normalize("memcpy@plt"), "memcpy");
+    assert_eq!(matching.normalize("libc.so.6@GLIBC_2.2.5"), "libc.so.6");
 }
 
 #[test]
@@ -411,4 +481,35 @@ fn test_blint_compatibility_oracle() {
         ),
         "core::ptr::drop_in_place<alloc::vec::Vec<wast::component::types::VariantCase>>"
     );
+}
+
+/// Pins the boundary of the idempotence guarantee: legacy Rust escape
+/// decoding is deliberately one-level (it mirrors rustc_demangle's printer),
+/// so decoded text may re-form escape-shaped input, and running `normalize`
+/// twice on such strings decodes one more level each time. Universal
+/// idempotence would require re-decoding replacements — corrupting the
+/// one-level contract — so this behavior is documented, not fixed. Found by
+/// the normalize fuzz target (artifact
+/// crash-001de558110000b022374f84d2428446e5517865); if this test ever fails
+/// because the decode became stable on this input, the change is welcome —
+/// but it must not come from re-decoding.
+#[test]
+fn test_normalize_escape_decode_is_one_level() {
+    // `$u80$` is rejected (U+0080 is a control code point), so `$u80` is
+    // copied verbatim and the `b` decoded from `$u62$` lands next to the
+    // final `$`, forming a `$u80b$` candidate that the next application
+    // decodes as U+080B.
+    let symbol = "$u80$u62$$";
+    let display = Normalizer::display();
+    let once = display.normalize(symbol);
+    let twice = display.normalize(&once);
+    assert_ne!(once, twice, "two-level decode would be a semantic change");
+    assert_eq!(once, "$u80b$");
+    assert_eq!(twice, "\u{80b}");
+    // The strips-only normalizer has no such boundary: universal
+    // idempotence holds with escapes off.
+    let strips = Normalizer::display().legacy_rust_escapes(false);
+    let once = strips.normalize(symbol);
+    let twice = strips.normalize(&once);
+    assert_eq!(once, twice);
 }

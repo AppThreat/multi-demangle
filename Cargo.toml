@@ -1,6 +1,6 @@
 [package]
 name = "multi-demangle"
-version = "1.2.0"
+version = "2.0.0"
 license = "MIT"
 authors = [
     "Team AppThreat <cloud@appthreat.com>"
@@ -41,10 +41,14 @@ required-features = ["cli"]
 [features]
 extension-module = ["pyo3/extension-module"]
 cli = ["dep:clap"]
-default = ["cli", "codewarrior", "cpp", "gnuv2", "msvc", "rust", "scala-native", "swift"]
+default = ["ada", "cli", "codewarrior", "cpp", "dlang", "fortran", "gnuv2", "kotlin-native", "msvc", "rust", "scala-native", "swift"]
+ada = []
 codewarrior = ["cwdemangle"]
 cpp = ["cpp_demangle"]
+dlang = []
+fortran = []
 gnuv2 = ["gnuv2_demangle"]
+kotlin-native = []
 msvc = ["msvc-demangler"]
 rust = ["rustc-demangle"]
 scala-native = ["scala_native_demangle"]
@@ -82,3 +86,10 @@ criterion = "0.7"
 [[bench]]
 name = "batch"
 harness = false
+
+# Vendored fixes for dependency bugs the Plan 05 fuzz targets found (see the
+# PATCH.md files in vendor/); drop each section when upstream releases the fix.
+[patch.crates-io]
+scala-native-demangle = { path = "vendor/scala-native-demangle" }
+gnuv2_demangle = { path = "vendor/gnuv2_demangle" }
+msvc-demangler = { path = "vendor/msvc-demangler" }
