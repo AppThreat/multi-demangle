@@ -5,7 +5,7 @@
 //! - C++ (Itanium, GNU v2, CodeWarrior, and MSVC) (`features = ["cpp", "gnuv2", "codewarrior", "msvc"]`)
 //! - Rust (both `legacy` and `v0`) (`features = ["rust"]`)
 //! - Scala Native via the unknown-language fallback (`features = ["scala-native"]`)
-//! - Swift (up to Swift 6.3.3) (`features = ["swift"]`)
+//! - Swift (up to Swift 6.4.0) (`features = ["swift"]`)
 //! - D (`features = ["dlang"]`)
 //! - Fortran, gfortran and Intel module symbols plus the plain g77 `name_`
 //!   form — explicit-request-only (`features = ["fortran"]`)

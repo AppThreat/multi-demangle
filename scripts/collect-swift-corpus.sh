@@ -64,7 +64,20 @@ trap 'rm -rf "$TMP"' EXIT
 # Internal (non-public) symbols are exactly what the demangler sees in real
 # binaries' symtabs, so no visibility gymnastics are needed; -parse-as-library
 # keeps top-level code out of the way of actors/global-actor isolation.
-"$SWIFTC" -c -parse-as-library -o "$TMP/fixture.o" "$FIXTURE"
+# Swift 6.4 gates the fixture's yielding accessors (SE-0474) behind an
+# experimental feature flag; when the plain compile rejects them, retry with
+# the flag and record it in the provenance so the corpus stays reproducible.
+EXTRA_FLAGS=""
+if ! "$SWIFTC" -c -parse-as-library -o "$TMP/fixture.o" "$FIXTURE" 2>"$TMP/compile.log"; then
+    if "$SWIFTC" -c -parse-as-library \
+        -enable-experimental-feature CoroutineAccessors \
+        -o "$TMP/fixture.o" "$FIXTURE" 2>"$TMP/compile-flag.log"; then
+        EXTRA_FLAGS="-enable-experimental-feature CoroutineAccessors"
+    else
+        cat "$TMP/compile-flag.log" >&2
+        exit 1
+    fi
+fi
 
 # Collect into the temp dir and only publish a corpus that passed the checks
 # below: writing straight to $OUT_DIR would truncate the committed snapshot
@@ -92,6 +105,7 @@ COUNT="$(grep -c '' < "$TMP/symbols.txt")"
     echo "target: $("$SWIFTC" -print-target-info 2>/dev/null \
         | sed -n 's/.*"unversionedTriple"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -1)"
     echo "source: scripts/swift-corpus-fixture.swift compiled with $SWIFTC"
+    [ -z "$EXTRA_FLAGS" ] || echo "flags: $EXTRA_FLAGS"
 } > "$TMP/provenance.txt"
 
 mv "$TMP/symbols.txt" "$OUT_DIR/symbols.txt"

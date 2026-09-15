@@ -13,7 +13,7 @@ fn main() {
             "vendor/swift/lib/Demangling/NodePrinter.cpp",
             "vendor/swift/lib/Demangling/Punycode.cpp",
             "vendor/swift/lib/Demangling/Remangler.cpp",
-            "vendor/swift/lib/Demangling/Errors.cpp",
+            "vendor/swift/lib/Demangling/DemanglingErrorHandling.cpp",
         ];
 
         cc::Build::new()

@@ -252,6 +252,7 @@ bool NodePrinter::isSimpleType(NodePointer Node) {
   case Node::Kind::BuiltinTypeName:
   case Node::Kind::BuiltinTupleType:
   case Node::Kind::BuiltinFixedArray:
+  case Node::Kind::BuiltinBorrow:
   case Node::Kind::Class:
   case Node::Kind::DependentGenericType:
   case Node::Kind::DependentMemberType:
@@ -386,6 +387,7 @@ bool NodePrinter::isSimpleType(NodePointer Node) {
   case Node::Kind::ImplDifferentiabilityKind:
   case Node::Kind::ImplEscaping:
   case Node::Kind::ImplErasedIsolation:
+  case Node::Kind::ImplNonisolatedNonsendingIsolation:
   case Node::Kind::ImplSendingResult:
   case Node::Kind::ImplConvention:
   case Node::Kind::ImplParameterResultDifferentiability:
@@ -434,7 +436,7 @@ bool NodePrinter::isSimpleType(NodePointer Node) {
   case Node::Kind::MethodDescriptor:
   case Node::Kind::MethodLookupFunction:
   case Node::Kind::ModifyAccessor:
-  case Node::Kind::Modify2Accessor:
+  case Node::Kind::YieldingMutateAccessor:
   case Node::Kind::NativeOwningAddressor:
   case Node::Kind::NativeOwningMutableAddressor:
   case Node::Kind::NativePinningAddressor:
@@ -485,7 +487,7 @@ bool NodePrinter::isSimpleType(NodePointer Node) {
   case Node::Kind::ReabstractionThunkHelperWithSelf:
   case Node::Kind::ReabstractionThunkHelperWithGlobalActor:
   case Node::Kind::ReadAccessor:
-  case Node::Kind::Read2Accessor:
+  case Node::Kind::YieldingBorrowAccessor:
   case Node::Kind::RelatedEntityDeclName:
   case Node::Kind::RepresentationChanged:
   case Node::Kind::RetroactiveConformance:
@@ -1227,6 +1229,7 @@ void NodePrinter::printFunctionSigSpecializationParams(NodePointer Node,
       Printer << "]";
       break;
     case FunctionSigSpecializationParamKind::ClosureProp:
+    case FunctionSigSpecializationParamKind::EscapingClosureProp:
       if (Idx + 2 > End)
         return;
       Printer << "[";
@@ -1993,6 +1996,9 @@ NodePointer NodePrinter::print(NodePointer Node, unsigned depth,
     case FunctionSigSpecializationParamKind::ClosureProp:
       Printer << "Closure Propagated";
       return nullptr;
+    case FunctionSigSpecializationParamKind::EscapingClosureProp:
+      Printer << "Escaping Closure Propagated";
+      return nullptr;
     case FunctionSigSpecializationParamKind::ClosurePropPreviousArg:
       Printer << "Same As Argument";
       return nullptr;
@@ -2019,6 +2025,11 @@ NodePointer NodePrinter::print(NodePointer Node, unsigned depth,
     print(Node->getChild(0), depth + 1);
     Printer << ", ";
     print(Node->getChild(1), depth + 1);
+    Printer << ">";
+    return nullptr;
+  case Node::Kind::BuiltinBorrow:
+    Printer << "Builtin.Borrow<";
+    print(Node->getChild(0), depth + 1);
     Printer << ">";
     return nullptr;
   case Node::Kind::Number:
@@ -2790,15 +2801,15 @@ NodePointer NodePrinter::print(NodePointer Node, unsigned depth,
   case Node::Kind::ReadAccessor:
     return printAbstractStorage(Node->getFirstChild(), depth, asPrefixContext,
                                 "read");
-  case Node::Kind::Read2Accessor:
+  case Node::Kind::YieldingBorrowAccessor:
     return printAbstractStorage(Node->getFirstChild(), depth, asPrefixContext,
-                                "read2");
+                                "yielding_borrow");
   case Node::Kind::ModifyAccessor:
     return printAbstractStorage(Node->getFirstChild(), depth, asPrefixContext,
                                 "modify");
-  case Node::Kind::Modify2Accessor:
+  case Node::Kind::YieldingMutateAccessor:
     return printAbstractStorage(Node->getFirstChild(), depth, asPrefixContext,
-                                "modify2");
+                                "yielding_mutate");
   case Node::Kind::InitAccessor:
     return printAbstractStorage(Node->getFirstChild(), depth, asPrefixContext,
                                 "init");
@@ -2885,6 +2896,9 @@ NodePointer NodePrinter::print(NodePointer Node, unsigned depth,
     return nullptr;
   case Node::Kind::ImplEscaping:
     Printer << "@escaping";
+    return nullptr;
+  case Node::Kind::ImplNonisolatedNonsendingIsolation:
+    Printer << "@caller_isolated";
     return nullptr;
   case Node::Kind::ImplErasedIsolation:
     Printer << "@isolated(any)";

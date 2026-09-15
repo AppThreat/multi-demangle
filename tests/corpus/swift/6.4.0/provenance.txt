@@ -1,0 +1,6 @@
+version: 6.4.0
+collected: 2026-09-15
+toolchain: Apple Swift version 6.4 (swift-6.4-RELEASE)
+target: arm64-apple-macosx
+source: scripts/swift-corpus-fixture.swift compiled with /Users/appthreat/Library/Developer/Toolchains/swift-6.4.0-RELEASE.xctoolchain/usr/bin/swiftc
+flags: -enable-experimental-feature CoroutineAccessors

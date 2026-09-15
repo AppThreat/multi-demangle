@@ -56,7 +56,7 @@ include/swift/Strings.h
 lib/Demangling/Context.cpp
 lib/Demangling/Demangler.cpp
 lib/Demangling/DemanglerAssert.h
-lib/Demangling/Errors.cpp
+lib/Demangling/DemanglingErrorHandling.cpp
 lib/Demangling/ManglingUtils.cpp
 lib/Demangling/NodeDumper.cpp
 lib/Demangling/NodePrinter.cpp

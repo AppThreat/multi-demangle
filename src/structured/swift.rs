@@ -55,9 +55,10 @@ const ACCESSOR_KINDS: &[&str] = &[
     "Setter",
     "MaterializeForSet",
     "ModifyAccessor",
-    "Modify2Accessor",
+    // Renamed from Modify2Accessor/Read2Accessor at Swift 6.4 (SE-0474).
+    "YieldingMutateAccessor",
     "ReadAccessor",
-    "Read2Accessor",
+    "YieldingBorrowAccessor",
     "WillSet",
     "DidSet",
     "OwningAddressor",
