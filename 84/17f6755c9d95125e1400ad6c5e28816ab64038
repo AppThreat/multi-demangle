@@ -1,0 +1,68 @@
+Cargo.lock
+  h_6a4cc5cdf68def 362
+Cargo.toml
+  h_6a4cc5cdf68def 3
+README.md
+  h_6a4cc5cdf68def 15,600-609
+build.rs
+  h_6a4cc5cdf68def 16
+pyproject.toml
+  h_6a4cc5cdf68def 7
+scripts/collect-swift-corpus.sh
+  h_6a4cc5cdf68def 67-80,108
+scripts/swift-corpus-fixture.swift
+  h_6a4cc5cdf68def 10-17,160-214
+scripts/sync-swift.sh
+  h_6a4cc5cdf68def 51
+src/lib.rs
+  h_6a4cc5cdf68def 8
+src/structured/swift.rs
+  h_6a4cc5cdf68def 58-59,61
+tests/corpus/swift/6.4.0/expected.txt
+  h_6a4cc5cdf68def 1-494
+tests/corpus/swift/6.4.0/provenance.txt
+  h_6a4cc5cdf68def 1-6
+tests/corpus/swift/6.4.0/symbols.txt
+  h_6a4cc5cdf68def 1-494
+tests/test_structured.rs
+  h_6a4cc5cdf68def 361-389
+tests/test_swift.rs
+  h_6a4cc5cdf68def 442-503
+vendor/swift/MANIFEST.txt
+  h_6a4cc5cdf68def 59
+vendor/swift/SYNC.md
+  h_6a4cc5cdf68def 29-55,57-61
+vendor/swift/include/llvm/ADT/Hashing.h
+  h_6a4cc5cdf68def 332
+vendor/swift/include/llvm/ADT/StringRef.h
+  h_6a4cc5cdf68def 41-42
+vendor/swift/include/swift/AST/Ownership.h
+  h_6a4cc5cdf68def 156
+vendor/swift/include/swift/Demangling/Demangle.h
+  h_6a4cc5cdf68def 121
+vendor/swift/include/swift/Demangling/DemangleNodes.def
+  h_6a4cc5cdf68def 50,138,191,245
+vendor/swift/include/swift/Demangling/Demangler.h
+  h_6a4cc5cdf68def 499,596
+vendor/swift/include/swift/Strings.h
+  h_6a4cc5cdf68def 40-41,183-184
+vendor/swift/lib/Demangling/Demangler.cpp
+  h_6a4cc5cdf68def 303-316,738,753,1528-1535,2428-2431,2935-2944,3120,3123,3128,3132,3443-3444,3486-3491,4170,4172,4441-4454
+vendor/swift/lib/Demangling/DemanglingErrorHandling.cpp
+  h_6a4cc5cdf68def 1
+vendor/swift/lib/Demangling/NodePrinter.cpp
+  h_6a4cc5cdf68def 255,390,439,490,1232,1999-2001,2030-2034,2804,2806,2810,2812,2900-2902
+vendor/swift/lib/Demangling/Remangler.cpp
+  h_6a4cc5cdf68def 361-363,911-916,1621-1623,1932-1938,2148-2150,2469,3137,3270-3280,3285
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "8417f6755c9d95125e1400ad6c5e28816ab64038",
+  "prompts": {},
+  "humans": {
+    "h_6a4cc5cdf68def": {
+      "author": "Team AppThreat <cloud@appthreat.com>"
+    }
+  }
+}
