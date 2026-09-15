@@ -14,7 +14,6 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "llvm/Support/Compiler.h"
 #include "swift/Demangling/Demangler.h"
 #include "DemanglerAssert.h"
 #include "swift/Demangling/ManglingMacros.h"
@@ -294,6 +293,20 @@ static bool isProtocolNode(Demangle::NodePointer Node) {
   case Demangle::Node::Kind::Protocol:
   case Demangle::Node::Kind::ProtocolSymbolicReference:
   case Demangle::Node::Kind::ObjectiveCProtocolSymbolicReference:
+    return true;
+  default:
+    return false;
+  }
+  assert(0 && "unknown node kind");
+}
+
+static bool isGenericParamType(Demangle::NodePointer Node) {
+  if (!Node)
+    return false;
+  switch (Node->getKind()) {
+  case Demangle::Node::Kind::Type:
+    return isGenericParamType(Node->getChild(0));
+  case Demangle::Node::Kind::DependentGenericParamType:
     return true;
   default:
     return false;
@@ -722,6 +735,7 @@ Demangler::DemangleInitRAII::DemangleInitRAII(Demangler &Dem,
     NumWords(Dem.NumWords), Text(Dem.Text), Pos(Dem.Pos),
     SymbolicReferenceResolver(std::move(Dem.SymbolicReferenceResolver))
 {
+  std::copy(Dem.Words, Dem.Words + MaxNumWords, Words);
   // Reset the demangler state for a nested job.
   Dem.NodeStack.init(Dem, 16);
   Dem.Substitutions.init(Dem, 16);
@@ -736,6 +750,7 @@ Demangler::DemangleInitRAII::~DemangleInitRAII() {
   Dem.NodeStack = NodeStack;
   Dem.Substitutions = Substitutions;
   Dem.NumWords = NumWords;
+  std::copy(Words, Words + MaxNumWords, Dem.Words);
   Dem.Text = Text;
   Dem.Pos = Pos;
   Dem.SymbolicReferenceResolver = std::move(SymbolicReferenceResolver);
@@ -1508,6 +1523,14 @@ NodePointer Demangler::demangleBuiltinType() {
       Ty = createNode(Node::Kind::BuiltinFixedArray);
       Ty->addChild(size, *this);
       Ty->addChild(element, *this);
+      break;
+    }
+    case 'W': {
+      NodePointer referent = popNode(Node::Kind::Type);
+      if (!referent)
+        return nullptr;
+      Ty = createNode(Node::Kind::BuiltinBorrow);
+      Ty->addChild(referent, *this);
       break;
     }
     case 'O':
@@ -2402,6 +2425,10 @@ NodePointer Demangler::demangleImplFunctionType() {
   if (nextIf('A'))
     type->addChild(createNode(Node::Kind::ImplErasedIsolation), *this);
 
+  if (nextIf('N'))
+    type->addChild(createNode(Node::Kind::ImplNonisolatedNonsendingIsolation),
+                   *this);
+
   switch ((MangledDifferentiabilityKind)peekChar()) {
   case MangledDifferentiabilityKind::Normal:  // 'd'
   case MangledDifferentiabilityKind::Linear:  // 'l'
@@ -2905,6 +2932,16 @@ NodePointer Demangler::popProtocolConformance() {
   return Conf;
 }
 
+NodePointer Demangler::popAssociatedConformanceWitnessAccessorSubject() {
+  if (auto type = popNode(Node::Kind::Type)) {
+    if (isGenericParamType(type))
+      return type;
+
+    pushNode(type);
+  }
+  return popAssocTypePath();
+}
+
 NodePointer Demangler::demangleThunkOrSpecialization() {
   switch (char c = nextChar()) {
     // Thunks that are from a thunk inst. We take the TT namespace.
@@ -3080,19 +3117,19 @@ NodePointer Demangler::demangleThunkOrSpecialization() {
 
     case 'n': {
       NodePointer requirementTy = popProtocol();
-      NodePointer conformingType = popAssocTypePath();
+      NodePointer subject = popAssociatedConformanceWitnessAccessorSubject();
       NodePointer protoTy = popNode(Node::Kind::Type);
       return createWithChildren(Node::Kind::AssociatedConformanceDescriptor,
-                                protoTy, conformingType, requirementTy);
+                                protoTy, subject, requirementTy);
     }
 
     case 'N': {
       NodePointer requirementTy = popProtocol();
-      auto assocTypePath = popAssocTypePath();
+      NodePointer subject = popAssociatedConformanceWitnessAccessorSubject();
       NodePointer protoTy = popNode(Node::Kind::Type);
       return createWithChildren(
                             Node::Kind::DefaultAssociatedConformanceAccessor,
-                            protoTy, assocTypePath, requirementTy);
+                            protoTy, subject, requirementTy);
     }
 
     case 'b': {
@@ -3403,7 +3440,8 @@ NodePointer Demangler::demangleFunctionSpecialization() {
 
       auto ParamKind = (FunctionSigSpecializationParamKind)KindNd->getIndex();
       switch (ParamKind) {
-        case FunctionSigSpecializationParamKind::ClosureProp: {
+        case FunctionSigSpecializationParamKind::ClosureProp:
+        case FunctionSigSpecializationParamKind::EscapingClosureProp: {
           while (NodePointer Ty = popNode(Node::Kind::Type)) {
             paramToAdd = addChild(paramToAdd, Ty);
           }
@@ -3445,6 +3483,12 @@ NodePointer Demangler::demangleFuncSpecParam(Node::Kind Kind) {
       return addChild(Param, createNode(
         Node::Kind::FunctionSignatureSpecializationParamKind,
         uint64_t(FunctionSigSpecializationParamKind::ClosureProp)));
+    case 'E':
+      // Like 'c', but for escaping closures. Consumes an identifier and
+      // multiple type parameters. The parameters will be added later.
+      return addChild(Param, createNode(
+        Node::Kind::FunctionSignatureSpecializationParamKind,
+        uint64_t(FunctionSigSpecializationParamKind::EscapingClosureProp)));
     case 'C': {
       // Consumes an identifier and multiple type parameters.
       // The parameters will be added later.
@@ -4123,9 +4167,9 @@ NodePointer Demangler::demangleAccessor(NodePointer ChildNode) {
     case 'w': Kind = Node::Kind::WillSet; break;
     case 'W': Kind = Node::Kind::DidSet; break;
     case 'r': Kind = Node::Kind::ReadAccessor; break;
-    case 'y': Kind = Node::Kind::Read2Accessor; break;
+    case 'y': Kind = Node::Kind::YieldingBorrowAccessor; break;
     case 'M': Kind = Node::Kind::ModifyAccessor; break;
-    case 'x': Kind = Node::Kind::Modify2Accessor; break;
+    case 'x': Kind = Node::Kind::YieldingMutateAccessor; break;
     case 'i': Kind = Node::Kind::InitAccessor; break;
     case 'b':
       Kind = Node::Kind::BorrowAccessor;
@@ -4393,6 +4437,20 @@ NodePointer Demangler::demangleGenericRequirement() {
     case 'I': 
       ConstraintKind = Inverse;
       TypeKind = Substitution;
+      inverseKind = demangleIndexAsNode();
+      if (!inverseKind)
+        return nullptr;
+      break;
+    case 'j':
+      ConstraintKind = Inverse;
+      TypeKind = Assoc;
+      inverseKind = demangleIndexAsNode();
+      if (!inverseKind)
+        return nullptr;
+      break;
+    case 'J':
+      ConstraintKind = Inverse;
+      TypeKind = CompoundAssoc;
       inverseKind = demangleIndexAsNode();
       if (!inverseKind)
         return nullptr;

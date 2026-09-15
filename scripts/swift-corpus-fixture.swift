@@ -7,6 +7,14 @@
 // between toolchains: generics and associated types, closures (escaping,
 // autoclosure, @Sendable), async/await and throw, actors and global-actor
 // isolation, property wrappers, subscripts, and specialization attributes.
+//
+// Swift 6.4 additions (SE-0507 borrow/mutate accessors, SE-0521 optional
+// opaque/existential types, SE-0474 yielding accessors, SE-0493/SE-0504
+// async-defer and cancellation shielding) are guarded with
+// `#if compiler(>=6.4)` so the fixture still compiles with the 6.3.x
+// toolchains that back the older corpora. The yielding accessors additionally
+// need `-enable-experimental-feature CoroutineAccessors`, which
+// collect-swift-corpus.sh passes automatically when the toolchain accepts it.
 
 import Foundation
 
@@ -149,3 +157,58 @@ extension Packet: CustomStringConvertible {
 
 @discardableResult
 func discardable(_ flag: Bool) -> Int { flag ? 1 : 0 }
+
+// --- Swift 6.4 ---
+
+#if compiler(>=6.4)
+// nonisolated(nonsending) parameter isolation: the closure type mangles with
+// the NonIsolatedCallerFunctionType marker ('C').
+actor Queue {
+    func enqueue(_ op: nonisolated(nonsending) () async -> Void) async {
+        await op()
+    }
+}
+// SE-0507 borrow/mutate accessors on a Copyable type: the accessors mangle
+// with the borrow ('b') and mutate ('z') accessor letters.
+struct Gauge64 {
+    private var backing: Int = 7
+    var direct: Int {
+        borrow { backing }
+        mutate { &backing }
+    }
+}
+
+// SE-0507 accessors on a ~Copyable type (the proposal's motivating form).
+struct Rigid<Element: ~Copyable>: ~Copyable {
+    var _element: Element
+    var element: Element {
+        borrow {
+            return _element
+        }
+        mutate {
+            return &_element
+        }
+    }
+}
+
+// SE-0521: optional opaque and existential types without parentheses.
+func optionalOpaque64(_ p: Packet) -> some Payload? { p }
+func optionalAny64(_ p: (any Payload)?) -> any Payload? { p }
+
+// SE-0474 yielding accessors (experimental in 6.4): the coroutine accessors
+// mangle as YieldingBorrowAccessor ('y') / YieldingMutateAccessor ('x').
+struct Yielder {
+    private var storage: [Int] = [1, 2, 3]
+    var current: Int {
+        yielding borrow { yield storage[0] }
+        yielding mutate { yield &storage[0] }
+    }
+}
+
+// SE-0493: defer in async code runs (and is awaited) before the function
+// exits. No dedicated mangling, but it exercises 6.4 codegen for the corpus.
+func deferredAsync(_ flag: Bool) async -> Int {
+    defer { print("exiting") }
+    return flag ? 1 : 0
+}
+#endif

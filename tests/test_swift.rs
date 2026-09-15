@@ -439,6 +439,68 @@ fn test_demangle_swift_concurrency_rendering() {
     });
 }
 
+/// Swift 6.4 mangling additions, verified against the `swift-demangle` binary
+/// of the swift-6.4.0-RELEASE toolchain. The vendored demangler (and upstream)
+/// renamed the `read2`/`modify2` accessor nodes to `yielding_borrow`/
+/// `yielding_mutate` (SE-0474) and added `Builtin.Borrow` ('BW',
+/// SE-0507 borrow/mutate accessors), the `@caller_isolated` impl-function-type
+/// isolation ('N'), and the `Escaping Closure Propagated` function-signature
+/// specialization parameter ('E'). The full per-toolchain snapshot lives in
+/// `tests/corpus/swift/6.4.0/`; these vectors pin the individual constructs
+/// (some taken from the Swift 6.4 standard library itself).
+#[test]
+fn test_demangle_swift_6_4() {
+    assert_demangle!(Language::Swift, DemangleOptions::complete(), {
+        // SE-0507 borrow/mutate accessors ('b'/'z') on a Copyable type.
+        "_$s7fixture7Gauge64V6directSivb" => "fixture.Gauge64.direct.borrow : Swift.Int",
+        "_$s7fixture7Gauge64V6directSivz" => "fixture.Gauge64.direct.mutate : Swift.Int",
+
+        // SE-0507 accessors on a ~Copyable type (the proposal's motivating
+        // form), including the compiler-synthesized coroutine accessors.
+        "_$s7fixture5RigidVAARi_zrlE7elementxvb" => "(extension in fixture):fixture.Rigid< where A: ~Swift.Copyable>.element.borrow : A",
+        "_$s7fixture5RigidVAARi_zrlE7elementxvz" => "(extension in fixture):fixture.Rigid< where A: ~Swift.Copyable>.element.mutate : A",
+
+        // SE-0474 yielding accessors ('y'/'x'), renamed from read2/modify2.
+        "_$s7fixture7YielderV7currentSivy" => "fixture.Yielder.current.yielding_borrow : Swift.Int",
+        "_$s7fixture7YielderV7currentSivx" => "fixture.Yielder.current.yielding_mutate : Swift.Int",
+        "_$s7fixture5RigidVAARi_zrlE8_elementxvx" => "(extension in fixture):fixture.Rigid< where A: ~Swift.Copyable>._element.yielding_mutate : A",
+        "_$s7fixture5RigidVAARi_zrlE8_elementxvy" => "(extension in fixture):fixture.Rigid< where A: ~Swift.Copyable>._element.yielding_borrow : A",
+        "_$s7fixture7YielderV7currentSivxTwc" => "coro function pointer to fixture.Yielder.current.yielding_mutate : Swift.Int",
+
+        // Builtin.Borrow ('BW'), from the Swift 6.4 standard library's SE-0519
+        // Ref type.
+        "_$ss3RefVsRi_zrlE7builtinxBWvg" => "(extension in Swift):Swift.Ref< where A: ~Swift.Copyable>.builtin.getter : Builtin.Borrow<A>",
+
+        // @caller_isolated impl-function-type isolation ('N') in a
+        // nonisolated(nonsending) reabstraction thunk, and the closure type
+        // itself ('YC' NonIsolatedCallerFunctionType).
+        "_$sIegH_BAIeNgHgIL_TR" => "reabstraction thunk helper from @escaping @callee_guaranteed @async () -> () to @escaping @caller_isolated @callee_guaranteed @async (@guaranteed Builtin.ImplicitActor) -> ()",
+        "_$s7fixture5QueueC7enqueueyyyyYaYCXEYaF" => "fixture.Queue.enqueue(nonisolated(nonsending) () async -> ()) async -> ()",
+
+        // SE-0521 optional opaque result type ('QrSg').
+        "_$s7fixture16optionalOpaque64yQrSgAA6PacketVF" => "fixture.optionalOpaque64(fixture.Packet) -> Swift.Optional<some>",
+        "_$s7fixture13optionalAny64yAA7Payload_pSgADF" => "fixture.optionalAny64(Swift.Optional<fixture.Payload>) -> Swift.Optional<fixture.Payload>",
+
+        // Escaping Closure Propagated ('E') function-signature specialization
+        // parameter, from an optimized (-O -wmo) build.
+        "_$s4opt27performyS2iycF39$s4opt25outer1xS2i_tFSiycfU_SiTf3pSi3_nTf1E_n" => "function signature specialization <Arg[0] = [Escaping Closure Propagated : $s4opt25outer1xS2i_tFSiycfU_SiTf3pSi3_n, Argument Types : []> of opt2.perform(() -> Swift.Int) -> Swift.Int",
+        // The same symbol with the classic non-escaping Closure Propagated
+        // ('c') parameter, for contrast.
+        "_$s4opt27performyS2iycF39$s4opt25outer1xS2i_tFSiycfU_SiTf3pSi3_nTf1c_n" => "function signature specialization <Arg[0] = [Closure Propagated : $s4opt25outer1xS2i_tFSiycfU_SiTf3pSi3_n, Argument Types : []> of opt2.perform(() -> Swift.Int) -> Swift.Int",
+    });
+}
+
+/// Malformed variants of the Swift 6.4 additions. The double-'E' specialization
+/// parameter list is rejected by the official 6.4 swift-demangle as well; the
+/// pipeline must pass it through untouched rather than crash or half-render.
+#[test]
+fn test_swift_6_4_abnormal_manglings() {
+    assert_demangle!(Language::Swift, DemangleOptions::complete(), {
+        "_$s4opt28perform2yS2iyc_SiyctF44$s4opt26outer21x1yS2i_SitFSiycfU_SiTf3pSi4_n0cd1_ef3U0_gH5Si5_nTf1EcE_n" => "_$s4opt28perform2yS2iyc_SiyctF44$s4opt26outer21x1yS2i_SitFSiycfU_SiTf3pSi4_n0cd1_ef3U0_gH5Si5_nTf1EcE_n",
+        "_$s4main1fyBoBWtF" => "_$s4main1fyBoBWtF",
+    });
+}
+
 /// The node-dump path used by structured extraction has its own scratch
 /// buffer and grow protocol; the 600-parameter symbol dumps far past its
 /// initial size, so this pins that path too (see `try_dump_swift`).

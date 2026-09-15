@@ -358,6 +358,35 @@ fn swift_accessor_kind_from_node_dump() {
     assert_eq!(static_getter.name, "property");
 }
 
+/// Swift 6.4 renamed the read2/modify2 accessor node kinds to
+/// YieldingBorrowAccessor/YieldingMutateAccessor (SE-0474) and added the
+/// SE-0507 borrow/mutate accessors; the node-dump walker must classify all
+/// four as the method-flavored accessors of the wrapped variable.
+#[test]
+fn swift_yielding_and_borrow_accessor_kinds_from_node_dump() {
+    // yielding borrow / yielding mutate ('y'/'x').
+    let yielding_borrow = structured("_$s7fixture7YielderV7currentSivy");
+    assert_eq!(yielding_borrow.kind, DemangledKind::Method);
+    assert_eq!(yielding_borrow.namespace, ["fixture", "Yielder"]);
+    assert_eq!(yielding_borrow.name, "current");
+
+    let yielding_mutate = structured("_$s7fixture7YielderV7currentSivx");
+    assert_eq!(yielding_mutate.kind, DemangledKind::Method);
+    assert_eq!(yielding_mutate.namespace, ["fixture", "Yielder"]);
+    assert_eq!(yielding_mutate.name, "current");
+
+    // borrow / mutate ('b'/'z').
+    let borrow = structured("_$s7fixture7Gauge64V6directSivb");
+    assert_eq!(borrow.kind, DemangledKind::Method);
+    assert_eq!(borrow.namespace, ["fixture", "Gauge64"]);
+    assert_eq!(borrow.name, "direct");
+
+    let mutate = structured("_$s7fixture7Gauge64V6directSivz");
+    assert_eq!(mutate.kind, DemangledKind::Method);
+    assert_eq!(mutate.namespace, ["fixture", "Gauge64"]);
+    assert_eq!(mutate.name, "direct");
+}
+
 #[test]
 fn swift_closure_kind_from_node_dump() {
     let closure = structured("$s8mangling10HasVarInitV5stateSbvpZfiSbyKXKfu_");

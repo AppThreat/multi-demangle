@@ -48,7 +48,7 @@ LLVM_SPARSE=(
 
 # build.rs compiles these lib/Demangling translation units; CrashReporter.cpp
 # is intentionally omitted (SWIFT_RUNTIME_NO_CRASH_REPORTER).
-BUILD_CPP="Context.cpp Demangler.cpp ManglingUtils.cpp NodeDumper.cpp NodePrinter.cpp Punycode.cpp Remangler.cpp Errors.cpp"
+BUILD_CPP="Context.cpp Demangler.cpp ManglingUtils.cpp NodeDumper.cpp NodePrinter.cpp Punycode.cpp Remangler.cpp DemanglingErrorHandling.cpp"
 
 FORCE=0
 TAG=""

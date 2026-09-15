@@ -12,7 +12,7 @@ Currently supported languages are:
 | C++           | Itanium ABI (GCC, Clang), GNU v2, CodeWarrior, and MSVC                                                            | `cpp`, `gnuv2`, `codewarrior`, `msvc` |
 | Rust          | Both `legacy` and `v0` schemes                                                                                     | `rust`                                |
 | Scala Native  | Via the unknown-language fallback (symbols prefixed `_SM`)                                                         | `scala-native`                        |
-| Swift         | Up to Swift 6.3.3, using a vendored Swift demangler                                                                | `swift`                               |
+| Swift         | Up to Swift 6.4.0, using a vendored Swift demangler                                                                | `swift`                               |
 | D             | D ABI mangling (`_D…`), incl. function types and templates                                                         | `dlang`                               |
 | Fortran       | gfortran `mod_MOD_proc`, Intel `mod_mp_proc_`, and the plain g77 `name_` form — **explicit request only** (see below)  | `fortran`                             |
 | Kotlin/Native | `_kfun:` symbols with parameter types                                                                              | `kotlin-native`                       |
@@ -597,8 +597,16 @@ The supported-version claim above is backed by per-toolchain corpus snapshots:
 `scripts/collect-swift-corpus.sh` compiles a fixture with a concrete Swift
 toolchain (pass its `swiftc` to represent another one) into
 `tests/corpus/swift/<version>/`, and the `swift_corpus` test pins the exact
-rendering. After a sync that changes output, regenerate snapshots deliberately
-and review the diff — downstream consumers (blint) match on these strings:
+rendering. The fixture exercises the constructs whose manglings drift between
+toolchains; Swift 6.4 additions (SE-0507 borrow/mutate accessors, SE-0521
+optional opaque types, SE-0474 yielding accessors) are guarded with
+`#if compiler(>=6.4)`, and the script retries the compile with
+`-enable-experimental-feature CoroutineAccessors` when the toolchain gates the
+yielding accessors (recorded in the corpus `provenance.txt`). After a sync
+that changes output, regenerate snapshots deliberately and review the diff —
+downstream consumers (blint) match on these strings. Note that Swift 6.4
+renamed the rendering of the coroutine accessors: symbols that printed as
+`.read2`/`.modify2` now print as `.yielding_borrow`/`.yielding_mutate`.
 
 ```
 MULTI_DEMANGLE_UPDATE_SNAPSHOTS=1 cargo test --all-features --test test_swift_corpus
