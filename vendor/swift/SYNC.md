@@ -53,10 +53,24 @@ workflow parses it to list upstream commits since the last sync.
   arm64-apple-macosx, with -enable-experimental-feature CoroutineAccessors
   for the fixture's SE-0474 accessors)
 
+
+## 2026-10-01 — swift-6.4.0-RELEASE
+
+- Swift ref: swift-6.4.0-RELEASE (b8189d766d86ad7fc8106787d6ce9e402f38dd72)
+- LLVM ref: swift-6.4.0-RELEASE (903b9faaae5c43ecc9b7e33f8db9c94c7429374a)
+- Headers added to the manifest: none
+- Manifest files missing upstream: none
+- Diffstat: no changes
+- Note: the upstream `main` commits since 2026-09-15 that touch the
+  demangling sources (41f0d2d "[NFC] Remove unused includes", e67b665 merge)
+  are not reachable from any `swift-*-RELEASE` tag yet, so the vendored
+  subset is unchanged; they will land with the next release-tag sync
+- Validation: cargo test --all-features PASS; pytest PASS; ASan/UBSan corpus PASS
+
 <!-- sync-metadata
 swift-ref: swift-6.4.0-RELEASE
 swift-commit: b8189d766d86ad7fc8106787d6ce9e402f38dd72
 llvm-ref: swift-6.4.0-RELEASE
 llvm-commit: 903b9faaae5c43ecc9b7e33f8db9c94c7429374a
-date: 2026-09-15
+date: 2026-10-01
 -->
