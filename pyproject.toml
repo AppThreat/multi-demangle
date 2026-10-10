@@ -4,7 +4,7 @@ build-backend = "maturin"
 
 [project]
 name = "multi-demangle"
-version = "2.1.0"
+version = "2.1.1"
 description = "A library to demangle symbols from various languages and compilers."
 readme = "README.md"
 license = "MIT"
@@ -15,6 +15,12 @@ keywords = ["demangler", "binary"]
 [tool.maturin]
 python-source = "python"
 include = [{ path = "vendor/**/*", format = "sdist" }]
+# The `#[pymodule]` block is gated on this crate feature. Release CI builds
+# wheels with `--all-features`, but a `pip install` of the sdist invokes the
+# PEP 517 backend without any feature flags, which compiles the module block
+# out and ships a wheel with no `PyInit_multi_demangle`. Declaring the feature
+# here fixes every maturin-driven build, sdist ones included.
+features = ["extension-module"]
 
 authors = [
     { name = "Team AppThreat", email = "cloud@appthreat.com" }
