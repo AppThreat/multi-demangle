@@ -122,7 +122,7 @@ jobs:
         fail-fast: false
         matrix:
           os: [ubuntu-latest, macos-latest, windows-latest]
-          python-version: ["3.10", "3.11", "3.12", "3.13", "3.14"]
+          python-version: ["3.10", "3.11", "3.12", "3.13", "3.14", "3.15"]
       steps:
         - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
           with:
@@ -131,6 +131,10 @@ jobs:
           uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7.0.0
           with:
             python-version: ${{ matrix.python-version }}
+            # The 3.15 GA build is not in the python-versions manifest yet, so
+            # this resolves 3.15.0-rc.3 until it lands and then self-upgrades.
+            # Drop the flag once GA is available.
+            allow-prereleases: true
         - name: Build and pytest (Linux / macOS)
           if: runner.os != 'Windows'
           run: |
@@ -236,6 +240,14 @@ jobs:
         with:
           python-version: '3.10'
           architecture: ${{ matrix.platform.target }}
+      # --find-interpreter builds one wheel per discoverable interpreter; this
+      # makes the set include CPython 3.15 so macOS and Windows users get a
+      # wheel instead of a source build.
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7.0.0
+        with:
+          python-version: '3.15'
+          architecture: ${{ matrix.platform.target }}
+          allow-prereleases: true
       - name: Build wheels
         uses: PyO3/maturin-action@e83996d129638aa358a18fbd1dfb82f0b0fb5d3b # v1.51.0
         env:
@@ -267,6 +279,13 @@ jobs:
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7.0.0
         with:
           python-version: '3.10'
+      # --find-interpreter builds one wheel per discoverable interpreter; this
+      # makes the set include CPython 3.15 so macOS and Windows users get a
+      # wheel instead of a source build.
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7.0.0
+        with:
+          python-version: '3.15'
+          allow-prereleases: true
       - name: Build wheels
         uses: PyO3/maturin-action@e83996d129638aa358a18fbd1dfb82f0b0fb5d3b # v1.51.0
         with:
@@ -296,11 +315,40 @@ jobs:
           name: wheels-sdist
           path: dist
 
+  sdist-install:
+    name: Sdist pip install smoke
+    runs-on: ${{ matrix.os }}
+    needs: [sdist]
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    steps:
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: wheels-sdist
+          path: dist
+      - uses: actions-rust-lang/setup-rust-toolchain@ecabd13d1c56bd1345c230e542e9144811ad706f  # v2.0.0
+        with:
+          cache: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7.0.0
+        with:
+          python-version: '3.13'
+      # The wheel jobs build with `--all-features`, so they pass even when a
+      # plain `pip install` of the sdist would compile the `#[pymodule]` block
+      # out. This is the only guard for the path macOS and Windows users hit
+      # whenever a matching wheel is missing.
+      - name: pip install the sdist and import it
+        run: |
+          python -m pip install --force-reinstall dist/multi_demangle-*.tar.gz
+          python -c 'import multi_demangle; assert multi_demangle.demangle_symbol("$s4main3fooyyF") == "main.foo() -> ()"; print("sdist install OK")'
+        shell: bash
+
   publish:
     name: Publish
     runs-on: ubuntu-latest
     if: ${{ startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch' }}
-    needs: [test, python-tests, linux, musllinux, windows, macos, sdist]
+    needs: [test, python-tests, linux, musllinux, windows, macos, sdist, sdist-install]
     permissions:
       id-token: write
     steps:
