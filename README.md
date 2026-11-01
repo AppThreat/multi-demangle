@@ -12,7 +12,7 @@ Currently supported languages are:
 | C++           | Itanium ABI (GCC, Clang), GNU v2, CodeWarrior, and MSVC                                                            | `cpp`, `gnuv2`, `codewarrior`, `msvc` |
 | Rust          | Both `legacy` and `v0` schemes                                                                                     | `rust`                                |
 | Scala Native  | Via the unknown-language fallback (symbols prefixed `_SM`)                                                         | `scala-native`                        |
-| Swift         | Up to Swift 6.4.0, using a vendored Swift demangler                                                                | `swift`                               |
+| Swift         | Up to Swift 6.4.2, using a vendored Swift demangler                                                                | `swift`                               |
 | D             | D ABI mangling (`_D…`), incl. function types and templates                                                         | `dlang`                               |
 | Fortran       | gfortran `mod_MOD_proc`, Intel `mod_mp_proc_`, and the plain g77 `name_` form — **explicit request only** (see below)  | `fortran`                             |
 | Kotlin/Native | `_kfun:` symbols with parameter types                                                                              | `kotlin-native`                       |
@@ -586,7 +586,7 @@ the real-symbol corpus):
 
 ```
 scripts/sync-swift.sh                # newest swift-*-RELEASE tag
-scripts/sync-swift.sh swift-6.4.0    # or an explicit tag
+scripts/sync-swift.sh swift-6.4.2    # or an explicit tag
 ```
 
 A monthly CI workflow (`swift-sync-reminder`) opens an issue listing upstream
