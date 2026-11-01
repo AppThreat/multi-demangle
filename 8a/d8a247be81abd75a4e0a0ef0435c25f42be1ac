@@ -1,0 +1,21 @@
+README.md
+  s_e8aff7f48e6bdc::t_08de469e7b217e 15,589
+src/lib.rs
+  s_e8aff7f48e6bdc::t_08de469e7b217e 8
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "8ad8a247be81abd75a4e0a0ef0435c25f42be1ac",
+  "prompts": {},
+  "sessions": {
+    "s_e8aff7f48e6bdc": {
+      "agent_id": {
+        "tool": "opencode",
+        "id": "sess_535da18f-a805-44ae-898d-beddb8da1d02",
+        "model": "GLM-5.3-Flash"
+      },
+      "human_author": "Prabhu Subramanian <prabhu@appthreat.com>"
+    }
+  }
+}
