@@ -22,7 +22,9 @@ permissions:
   contents: read
 jobs:
   test:
-    if: github.event_name != 'merge_group'
+    # "Rust Tests (ubuntu-latest)" is a required status check on main, and a
+    # skipped job never satisfies a required check, so this job runs on
+    # merge-group builds too; the queue merges only once it passes here.
     name: Rust Tests
     runs-on: ${{ matrix.os }}
     strategy:
@@ -35,16 +37,10 @@ jobs:
       - name: Check formatting
         run: cargo fmt --check
         shell: bash
-      # MSVC cannot compile the vendored Swift demangler headers (`llvm` is
-      # ambiguous with the vendored `__swift::__runtime::llvm`), so every
-      # step that may rebuild the C++ shim needs clang. `$GITHUB_ENV`
-      # persists it across steps — a plain `export` would not.
-      - name: Use clang for the vendored Swift demangler (Windows)
-        if: runner.os == 'Windows'
-        run: |
-          echo "CC=clang" >> "$GITHUB_ENV"
-          echo "CXX=clang++" >> "$GITHUB_ENV"
-        shell: bash
+      # The build script pins clang for the vendored Swift demangler on
+      # Windows itself (MSVC cannot compile those headers), so no CC or CXX
+      # override is needed here. A global one would leak into unrelated C
+      # build scripts pulled in by dev-dependencies and break them.
       - name: Run cargo test
         run: |
           if [ "${{ runner.os }}" = "macOS" ]; then
@@ -154,9 +150,6 @@ jobs:
             pip install maturin pytest
             maturin develop --all-features
             pytest python/tests
-          env:
-            CC: clang
-            CXX: clang++
   linux:
     if: github.event_name != 'merge_group'
     runs-on: ${{ matrix.platform.runner }}
@@ -229,6 +222,7 @@ jobs:
           path: dist
 
   windows:
+    if: github.event_name != 'merge_group'
     runs-on: ${{ matrix.platform.runner }}
     strategy:
       matrix:
@@ -255,9 +249,6 @@ jobs:
           allow-prereleases: true
       - name: Build wheels
         uses: PyO3/maturin-action@e83996d129638aa358a18fbd1dfb82f0b0fb5d3b # v1.51.0
-        env:
-          CC: clang
-          CXX: clang++
         with:
           target: ${{ matrix.platform.target }}
           args: --all-features --release --out dist --find-interpreter
@@ -269,6 +260,7 @@ jobs:
           path: dist
 
   macos:
+    if: github.event_name != 'merge_group'
     runs-on: ${{ matrix.platform.runner }}
     strategy:
       matrix:
@@ -304,6 +296,7 @@ jobs:
           path: dist
 
   sdist:
+    if: github.event_name != 'merge_group'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
@@ -321,6 +314,7 @@ jobs:
           path: dist
 
   sdist-install:
+    if: github.event_name != 'merge_group'
     name: Sdist pip install smoke
     runs-on: ${{ matrix.os }}
     needs: [sdist]
