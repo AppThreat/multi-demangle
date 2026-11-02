@@ -1,0 +1,21 @@
+build.rs
+  s_cd0ed634c8eead::t_8440689afe4510 19-20,30-44
+.github/workflows/CI.yml
+  s_cd0ed634c8eead::t_64d769a371b3f3 38-41
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "ba394aa13b1af6ceb51af823d3c2db15bdc4a259",
+  "prompts": {},
+  "sessions": {
+    "s_cd0ed634c8eead": {
+      "agent_id": {
+        "tool": "opencode",
+        "id": "sess_6819512a-968c-41e4-94c0-2fe59250614f",
+        "model": "unknown"
+      },
+      "human_author": "Prabhu Subramanian <prabhu@appthreat.com>"
+    }
+  }
+}
