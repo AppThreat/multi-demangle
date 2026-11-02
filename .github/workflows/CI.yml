@@ -22,7 +22,9 @@ permissions:
   contents: read
 jobs:
   test:
-    if: github.event_name != 'merge_group'
+    # "Rust Tests (ubuntu-latest)" is a required status check on main, and a
+    # skipped job never satisfies a required check, so this job runs on
+    # merge-group builds too; the queue merges only once it passes here.
     name: Rust Tests
     runs-on: ${{ matrix.os }}
     strategy:
@@ -220,6 +222,7 @@ jobs:
           path: dist
 
   windows:
+    if: github.event_name != 'merge_group'
     runs-on: ${{ matrix.platform.runner }}
     strategy:
       matrix:
@@ -257,6 +260,7 @@ jobs:
           path: dist
 
   macos:
+    if: github.event_name != 'merge_group'
     runs-on: ${{ matrix.platform.runner }}
     strategy:
       matrix:
@@ -292,6 +296,7 @@ jobs:
           path: dist
 
   sdist:
+    if: github.event_name != 'merge_group'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
@@ -309,6 +314,7 @@ jobs:
           path: dist
 
   sdist-install:
+    if: github.event_name != 'merge_group'
     name: Sdist pip install smoke
     runs-on: ${{ matrix.os }}
     needs: [sdist]
