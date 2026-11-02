@@ -1,0 +1,19 @@
+pyproject.toml
+  s_cd0ed634c8eead::t_a3ae293271870c 14-22,32
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "3890608cafe8ff402f21a9dc4704cba9a14a6594",
+  "prompts": {},
+  "sessions": {
+    "s_cd0ed634c8eead": {
+      "agent_id": {
+        "tool": "opencode",
+        "id": "sess_6819512a-968c-41e4-94c0-2fe59250614f",
+        "model": "unknown"
+      },
+      "human_author": "Prabhu Subramanian <prabhu@appthreat.com>"
+    }
+  }
+}
