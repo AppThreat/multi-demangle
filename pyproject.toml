@@ -11,6 +11,15 @@ license = "MIT"
 homepage = "https://github.com/AppThreat/multi-demangle"
 repository = "https://github.com/AppThreat/multi-demangle"
 keywords = ["demangler", "binary"]
+authors = [
+    { name = "Team AppThreat", email = "cloud@appthreat.com" }
+]
+requires-python = ">=3.10"
+classifiers = [
+    "Programming Language :: Rust",
+    "Programming Language :: Python :: Implementation :: CPython",
+    "Programming Language :: Python :: Implementation :: PyPy",
+]
 
 [tool.maturin]
 python-source = "python"
@@ -21,13 +30,3 @@ include = [{ path = "vendor/**/*", format = "sdist" }]
 # out and ships a wheel with no `PyInit_multi_demangle`. Declaring the feature
 # here fixes every maturin-driven build, sdist ones included.
 features = ["extension-module"]
-
-authors = [
-    { name = "Team AppThreat", email = "cloud@appthreat.com" }
-]
-requires-python = ">=3.10"
-classifiers = [
-    "Programming Language :: Rust",
-    "Programming Language :: Python :: Implementation :: CPython",
-    "Programming Language :: Python :: Implementation :: PyPy",
-]
